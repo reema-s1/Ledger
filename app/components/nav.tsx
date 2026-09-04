@@ -16,6 +16,11 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+async function handleLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/';
+}
+
 export function Nav() {
   const pathname = usePathname();
 
@@ -50,23 +55,39 @@ export function Nav() {
           <LedgerMark />
           Ledger
         </Link>
-        <nav style={{ display: 'flex', gap: 24 }}>
-          {LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="nav-link"
-              data-active={isActive(pathname, link.href)}
-              style={{
-                fontSize: 13.5,
-                textDecoration: 'none',
-                letterSpacing: '0.01em',
-              }}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <nav style={{ display: 'flex', gap: 24 }}>
+            {LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="nav-link"
+                data-active={isActive(pathname, link.href)}
+                style={{
+                  fontSize: 13.5,
+                  textDecoration: 'none',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+          <button
+            onClick={handleLogout}
+            className="nav-link"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              fontSize: 13.5,
+              letterSpacing: '0.01em',
+              cursor: 'pointer',
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </header>
   );
