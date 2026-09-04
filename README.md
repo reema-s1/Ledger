@@ -3,7 +3,7 @@
 Most watchlists show current state and leave you to work out what
 changed. Ledger shows the diff.
 
-**Live demo:** [since-alpha.vercel.app](https://since-alpha.vercel.app) · **Try it:** click "Try as Guest" — no sign-up, instant seeded account.
+**Live demo:** [ledger-diff.vercel.app](https://ledger-diff.vercel.app) · **Try it:** click "Try as Guest" — no sign-up, instant seeded account.
 
 ![Landing screen](docs/screenshots/landing.png)
 
