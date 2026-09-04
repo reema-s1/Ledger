@@ -19,7 +19,7 @@ const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('ledger:th
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const showNav = await hasSession();
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
