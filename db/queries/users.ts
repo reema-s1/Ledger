@@ -24,3 +24,16 @@ export async function getUser(id: number): Promise<UserRow | null> {
 export async function getUserByUsername(username: string): Promise<UserRow | null> {
   return queryOne<UserRow>('SELECT * FROM users WHERE username = $1', [username]);
 }
+
+export async function createUserWithCredentials(
+  displayName: string,
+  username: string,
+  passwordHash: string,
+): Promise<UserRow> {
+  const row = await queryOne<UserRow>(
+    'INSERT INTO users (display_name, username, password_hash) VALUES ($1, $2, $3) RETURNING *',
+    [displayName, username, passwordHash],
+  );
+  if (!row) throw new Error('createUserWithCredentials: insert returned no row');
+  return row;
+}
