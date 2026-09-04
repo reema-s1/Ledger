@@ -25,6 +25,8 @@ export interface QuietReason {
   residualZ: number | null;
   volumeRatio: number | null;
   clearedBar: boolean;
+  /** |residualZ| / residualZGate — 1.0 is exactly at the bar. Uncapped; the UI clamps it for a progress bar. */
+  zFraction: number | null;
   reason: string;
 }
 
@@ -84,18 +86,18 @@ async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<Qui
   ]);
 
   if (!symbolBars || symbolBars.length < 2) {
-    return { symbol, sessionDate: null, residualZ: null, volumeRatio: null, clearedBar: false, reason: 'not enough history yet' };
+    return { symbol, sessionDate: null, residualZ: null, volumeRatio: null, clearedBar: false, zFraction: null, reason: 'not enough history yet' };
   }
 
   const sessionDate = symbolBars[symbolBars.length - 1]!.sessionDate;
 
   if (isExDate(sessionDate, toActions(actionRows))) {
-    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, reason: 'corporate action today, not evaluated as a price move' };
+    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, zFraction: null, reason: 'corporate action today, not evaluated as a price move' };
   }
 
   const cluster = await getLatestClusterForSymbol(symbol);
   if (!cluster) {
-    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, reason: 'no cluster computed yet' };
+    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, zFraction: null, reason: 'no cluster computed yet' };
   }
   const peers = cluster.members.filter((m) => m !== symbol);
 
@@ -111,7 +113,7 @@ async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<Qui
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
   if (!indexBars || alignedPeers.length === 0) {
-    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, reason: 'insufficient cluster history' };
+    return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, zFraction: null, reason: 'insufficient cluster history' };
   }
 
   const clusterReturns = computeClusterMeanReturns(symbolBars, alignedPeers);
@@ -123,13 +125,29 @@ async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<Qui
   };
 
   const d = decompose(input, DEFAULT_CONFIG);
+  const clearedZGate = Math.abs(d.residualZ) >= DEFAULT_CONFIG.residualZGate;
   const clearedBar =
-    (Math.abs(d.residualZ) >= DEFAULT_CONFIG.residualZGate && d.volumeWeightedZ >= DEFAULT_CONFIG.significanceThreshold) ||
+    (clearedZGate && d.volumeWeightedZ >= DEFAULT_CONFIG.significanceThreshold) ||
     (d.isStructuralBreak && Math.abs(d.residualZ) >= DEFAULT_CONFIG.breakResidualZGate);
 
-  const reason = `residual ${Math.abs(d.residualZ).toFixed(1)}σ (bar is ${DEFAULT_CONFIG.residualZGate}σ), ${d.volumeRatio.toFixed(1)}x normal volume`;
+  const absZ = Math.abs(d.residualZ);
+  const zFraction = absZ / DEFAULT_CONFIG.residualZGate;
 
-  return { symbol, sessionDate, residualZ: d.residualZ, volumeRatio: d.volumeRatio, clearedBar, reason };
+  // A plain sentence, same principle as the digest cards: say what
+  // actually happened (and, when relevant, which specific gate held it
+  // back) instead of handing over raw numbers for the reader to parse.
+  let reason: string;
+  if (clearedBar) {
+    reason = `${absZ.toFixed(1)}σ, confirmed by volume — this is why it's in today's digest.`;
+  } else if (clearedZGate) {
+    reason = `${absZ.toFixed(1)}σ move clears the bar, but only ${d.volumeRatio.toFixed(1)}x normal volume — not enough to confirm it.`;
+  } else if (zFraction >= 0.6) {
+    reason = `${absZ.toFixed(1)}σ — getting closer, but still under the 2σ bar.`;
+  } else {
+    reason = `${absZ.toFixed(1)}σ — comfortably normal for this stock.`;
+  }
+
+  return { symbol, sessionDate, residualZ: d.residualZ, volumeRatio: d.volumeRatio, clearedBar, zFraction, reason };
 }
 
 export async function explainWhyQuietForSymbols(symbols: string[]): Promise<QuietReason[]> {
