@@ -119,3 +119,52 @@ export async function getRecentlyMovedSymbols(sinceIso: string): Promise<Map<str
   }
   return out;
 }
+
+/**
+ * True if a symbol already has a 'reassurance' event at or after
+ * `sinceIso` — the dedup check so a multi-day market-wide dip doesn't
+ * emit a near-identical "the market did this" card every single day.
+ */
+export async function hasRecentEventOfKind(symbol: string, kind: string, sinceIso: string): Promise<boolean> {
+  const row = await queryOne<{ exists: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM events WHERE symbol = $1 AND kind = $2 AND ts >= $3) AS exists`,
+    [symbol, kind, sinceIso],
+  );
+  return row?.exists ?? false;
+}
+
+/**
+ * Flagged events (residual_move / structural_break) older than
+ * `maxTsIso` with no 'resolution' event referencing them yet — the
+ * resolution job's work queue. Purely retrospective: this never looks at
+ * whether an event *should* have fired, only what happened after.
+ */
+export async function getEventsNeedingResolution(maxTsIso: string, limit = 200): Promise<EventRow[]> {
+  return query<EventRow>(
+    `SELECT e.* FROM events e
+     WHERE e.kind IN ('residual_move', 'structural_break')
+       AND e.ts <= $1
+       AND NOT EXISTS (SELECT 1 FROM events r WHERE r.supersedes = e.id AND r.kind = 'resolution')
+     ORDER BY e.id ASC
+     LIMIT $2`,
+    [maxTsIso, limit],
+  );
+}
+
+/** Outcome counts across the most recent N resolution events — the calibration line ("14 held, 6 reverted"). */
+export async function getResolutionStats(limit = 20): Promise<{ held: number; partially_reverted: number; reverted: number; total: number }> {
+  const rows = await query<{ outcome: string }>(
+    `SELECT payload->>'outcome' AS outcome FROM events
+     WHERE kind = 'resolution'
+     ORDER BY id DESC
+     LIMIT $1`,
+    [limit],
+  );
+  const stats = { held: 0, partially_reverted: 0, reverted: 0, total: rows.length };
+  for (const r of rows) {
+    if (r.outcome === 'held') stats.held++;
+    else if (r.outcome === 'partially_reverted') stats.partially_reverted++;
+    else if (r.outcome === 'reverted') stats.reverted++;
+  }
+  return stats;
+}

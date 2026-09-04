@@ -32,4 +32,11 @@ export interface DigestItem {
   eventIds: number[];
   fromTs: string;
   toTs: string;
+  /**
+   * Set only by resolution-notes.ts when a resolution clause was attached.
+   * Duplicates the tail of `headline` in plain text so Simple mode (which
+   * replaces `headline` with a generic sentence) can still surface it —
+   * the outcome must stay visible regardless of toggle state.
+   */
+  resolutionNote?: string;
 }

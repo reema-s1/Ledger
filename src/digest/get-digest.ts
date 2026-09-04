@@ -1,12 +1,25 @@
 import { listWatchlist } from '../../db/queries/watchlist';
 import { getCursorOrDefault } from '../../db/queries/cursors';
-import { getEventsSinceForSymbols } from '../../db/queries/events';
+import { getEventsSinceForSymbols, getResolutionStats } from '../../db/queries/events';
 import { compactEvents } from './compact';
+import { buildReassuranceCards, type ReassuranceCard } from './reassurance-cards';
+import { attachResolutionNotes } from './resolution-notes';
 import type { DigestEvent, DigestItem } from './types';
+
+export interface ResolutionStats {
+  held: number;
+  partially_reverted: number;
+  reverted: number;
+  total: number;
+}
 
 export interface DigestResult {
   items: DigestItem[];
   cursors: Record<string, number>;
+  /** "The market explains this" cards — never seen by compactEvents, assembled separately. */
+  reassurance: ReassuranceCard[];
+  /** Calibration line ("14 held, 6 reverted") across the last 20 graded alerts, not scoped to this user's watchlist. */
+  resolutionStats: ResolutionStats;
 }
 
 /**
@@ -16,7 +29,8 @@ export interface DigestResult {
  */
 export async function getDigestForUser(userId: number): Promise<DigestResult> {
   const watchlist = await listWatchlist(userId);
-  if (watchlist.length === 0) return { items: [], cursors: {} };
+  const resolutionStats = await getResolutionStats(20);
+  if (watchlist.length === 0) return { items: [], cursors: {}, reassurance: [], resolutionStats };
 
   const cursorEntries = await Promise.all(
     watchlist.map(async (w) => ({
@@ -36,10 +50,20 @@ export async function getDigestForUser(userId: number): Promise<DigestResult> {
     explanation: e.explanation,
   }));
 
-  const items = compactEvents(digestEvents, new Date());
+  // Neither 'reassurance' nor 'resolution' events ever reach
+  // compactEvents — that function, and every card it produces, is
+  // untouched by either feature. Both are assembled/attached separately.
+  const reassuranceEvents = digestEvents.filter((e) => e.kind === 'reassurance');
+  const resolutionEvents = digestEvents.filter((e) => e.kind === 'resolution');
+  const flaggedEvents = digestEvents.filter((e) => e.kind !== 'reassurance' && e.kind !== 'resolution');
+
+  const now = new Date();
+  const compacted = compactEvents(flaggedEvents, now);
+  const items = attachResolutionNotes(compacted, resolutionEvents, now);
+  const reassurance = buildReassuranceCards(reassuranceEvents, now);
 
   const cursors: Record<string, number> = {};
   for (const c of cursorEntries) cursors[c.symbol] = c.sinceEventId;
 
-  return { items, cursors };
+  return { items, cursors, reassurance, resolutionStats };
 }

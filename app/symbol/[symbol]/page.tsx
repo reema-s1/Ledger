@@ -46,6 +46,15 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
       ? cluster.cluster_id.replace('sector:', '')
       : 'correlation cluster'
     : null;
+  // Primary gloss leads with a plain sentence; the actual correlation
+  // numbers are a secondary reveal via WhyGrouped's click-to-expand, not
+  // the first thing shown.
+  const clusterGloss =
+    cluster?.method === 'sector'
+      ? `These move together — all ${clusterLabel} companies.`
+      : cluster
+        ? 'These have moved together over the past 130 sessions.'
+        : null;
 
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
@@ -111,10 +120,10 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
           >
             Cluster
           </h2>
-          <p style={{ fontSize: 14, margin: 0 }}>
-            Grouped with{' '}
+          <p style={{ fontSize: 15, fontWeight: 500, margin: '0 0 8px' }}>{clusterGloss}</p>
+          <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
             {peers.length === 0
-              ? 'no peers currently.'
+              ? 'No peers currently.'
               : peers.map((p, i) => (
                   <span key={p}>
                     <Link href={`/symbol/${p}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
@@ -122,8 +131,7 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
                     </Link>
                     {i < peers.length - 1 ? ', ' : ''}
                   </span>
-                ))}{' '}
-            <span style={{ color: 'var(--ink-muted)' }}>({clusterLabel})</span>
+                ))}
           </p>
           {peers.length > 0 && <WhyGrouped symbol={symbol} />}
         </section>

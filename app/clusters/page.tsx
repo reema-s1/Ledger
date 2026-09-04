@@ -57,6 +57,20 @@ export default async function ClustersPage() {
       </p>
 
       <ClusterVisual groups={groups} moved={moved} />
+
+      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {groups.map((g) => (
+          <p key={g.id} style={{ fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
+            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{g.label}</span> —{' '}
+            {method === 'sector'
+              ? `these move together, all ${g.label} companies.`
+              : 'these have moved together over the past 130 sessions.'}{' '}
+            <span style={{ color: 'var(--ink-faint)' }}>
+              (open a symbol page and tap "Why grouped?" for the actual correlation numbers)
+            </span>
+          </p>
+        ))}
+      </div>
     </main>
   );
 }

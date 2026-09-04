@@ -8,9 +8,11 @@ interface AckButtonProps {
   symbol: string;
   upToEventId: number;
   label?: string;
+  /** For cards that must never visually compete with a real alert (e.g. reassurance) — plain text, no pill. */
+  quiet?: boolean;
 }
 
-export function AckButton({ symbol, upToEventId, label = 'Seen' }: AckButtonProps) {
+export function AckButton({ symbol, upToEventId, label = 'Seen', quiet = false }: AckButtonProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -37,18 +39,30 @@ export function AckButton({ symbol, upToEventId, label = 'Seen' }: AckButtonProp
     <button
       onClick={handleClick}
       disabled={pending}
-      style={{
-        background: 'var(--accent-soft)',
-        border: 'none',
-        borderRadius: 999,
-        color: 'var(--up)',
-        fontWeight: 600,
-        fontSize: 12,
-        letterSpacing: '0.02em',
-        padding: '5px 12px',
-        cursor: pending ? 'default' : 'pointer',
-        opacity: pending ? 0.5 : 1,
-      }}
+      style={
+        quiet
+          ? {
+              background: 'none',
+              border: 'none',
+              color: 'var(--ink-faint)',
+              fontSize: 11.5,
+              padding: 0,
+              cursor: pending ? 'default' : 'pointer',
+              opacity: pending ? 0.5 : 1,
+            }
+          : {
+              background: 'var(--accent-soft)',
+              border: 'none',
+              borderRadius: 999,
+              color: 'var(--up)',
+              fontWeight: 600,
+              fontSize: 12,
+              letterSpacing: '0.02em',
+              padding: '5px 12px',
+              cursor: pending ? 'default' : 'pointer',
+              opacity: pending ? 0.5 : 1,
+            }
+      }
     >
       {pending ? '…' : label}
     </button>

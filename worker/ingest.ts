@@ -28,15 +28,21 @@ import { alignBars, computeClusterMeanReturns } from './aggregate';
 import { listCorporateActions, type CorporateActionRow } from '../db/queries/corporate-actions';
 import { upsertCandle, getLatestCandleDate } from '../db/queries/candles';
 import { getLatestClusterForSymbol } from '../db/queries/clusters';
-import { appendEvent, getUnresolvedMoveEvents } from '../db/queries/events';
+import { appendEvent, getUnresolvedMoveEvents, hasRecentEventOfKind } from '../db/queries/events';
 import { evaluate } from '../src/significance/engine';
+import { decompose } from '../src/significance/decompose';
 import { DEFAULT_CONFIG } from '../src/significance/config';
+import { checkReassurance } from '../src/significance/reassurance';
 import type { SignificanceInput } from '../src/significance/types';
 import { INDEX_SYMBOL } from '../src/seed/symbols';
 import type { Candle } from '../src/lib/quotes/types';
 
 const HISTORY_DAYS = 130;
 const RECONCILE_TOLERANCE = 0.01; // 1% — beyond this, two sources count as disagreeing
+// How far back to look before emitting a new reassurance card for a
+// symbol — a multi-day market-wide dip shouldn't produce a near-identical
+// "the market did this" card every single day.
+const REASSURANCE_DEDUP_DAYS = 5;
 
 export type IngestOutcome =
   | 'no-history'
@@ -53,6 +59,8 @@ export interface IngestResult {
   outcome: IngestOutcome;
   significanceEvent: 'residual_move' | 'structural_break' | null;
   resolvedPriorEvent: boolean;
+  /** A separate, lower-priority "the market explains this" card — only ever set when significanceEvent is null. */
+  reassuranceEvent: boolean;
 }
 
 function toActions(rows: CorporateActionRow[]): CorporateAction[] {
@@ -115,7 +123,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
   ]);
 
   if (primaryHistory.length === 0) {
-    return [{ symbol, sessionDate: null, outcome: 'no-history', significanceEvent: null, resolvedPriorEvent: false }];
+    return [{ symbol, sessionDate: null, outcome: 'no-history', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false }];
   }
 
   const actions = toActions(actionRows);
@@ -169,7 +177,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
       console.warn(
         `[worker] ${symbol} ${sessionDate}: sources disagree by ${((reconciled.disagreementPct ?? 0) * 100).toFixed(2)}% — marked unconfirmed, skipping significance`,
       );
-      results.push({ symbol, sessionDate, outcome: 'unconfirmed', significanceEvent: null, resolvedPriorEvent: false });
+      results.push({ symbol, sessionDate, outcome: 'unconfirmed', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
@@ -183,18 +191,18 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
         payload: { type: action.type, ratio: action.ratio },
         explanation: `${symbol} executed a 1:${action.ratio} ${action.type} today.`,
       });
-      results.push({ symbol, sessionDate, outcome: 'corporate-action', significanceEvent: null, resolvedPriorEvent: false });
+      results.push({ symbol, sessionDate, outcome: 'corporate-action', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
     const symbolBars = adjustBarsForCorporateActions(toRawBars(historyThroughDay), actions);
     if (symbolBars.length < 2) {
-      results.push({ symbol, sessionDate, outcome: 'first-session', significanceEvent: null, resolvedPriorEvent: false });
+      results.push({ symbol, sessionDate, outcome: 'first-session', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
     if (!cluster || !indexFetched || peerFetched.some((p) => p === null) || peerFetched.length === 0) {
-      results.push({ symbol, sessionDate, outcome: cluster ? 'insufficient-cluster-history' : 'no-cluster', significanceEvent: null, resolvedPriorEvent: false });
+      results.push({ symbol, sessionDate, outcome: cluster ? 'insufficient-cluster-history' : 'no-cluster', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
@@ -207,7 +215,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
     const alignedPeerBars = peerBarsRaw.map((p) => alignBars(symbolBars, p)).filter((p): p is NonNullable<typeof p> => p !== null);
 
     if (!indexBars || alignedPeerBars.length === 0) {
-      results.push({ symbol, sessionDate, outcome: 'insufficient-cluster-history', significanceEvent: null, resolvedPriorEvent: false });
+      results.push({ symbol, sessionDate, outcome: 'insufficient-cluster-history', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
@@ -222,6 +230,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
     };
 
     let significanceEvent: 'residual_move' | 'structural_break' | null = null;
+    let reassuranceEvent = false;
     try {
       const result = evaluate(input, DEFAULT_CONFIG, clusterLabel);
       if (result) {
@@ -240,6 +249,28 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
           explanation: result.explanation,
         });
         if (appended) significanceEvent = result.kind;
+      } else {
+        // Reassurance: a separate, lower-priority check that only ever
+        // runs once the real engine has already stayed silent on this
+        // exact decomposition. Never changes what the real engine
+        // flags — decompose() is re-run here (not evaluate()) purely to
+        // get the same numbers evaluate() already computed and discarded.
+        const d = decompose(input, DEFAULT_CONFIG);
+        const reassurance = checkReassurance(symbol, sessionDate, d);
+        if (reassurance) {
+          const dedupSince = new Date(todayRaw.ts.getTime() - REASSURANCE_DEDUP_DAYS * 24 * 60 * 60 * 1000);
+          const alreadyRecent = await hasRecentEventOfKind(symbol, 'reassurance', dedupSince.toISOString());
+          if (!alreadyRecent) {
+            const appended = await appendEvent({
+              symbol,
+              ts: todayRaw.ts,
+              kind: 'reassurance',
+              payload: { observedReturn: reassurance.observedReturn, indexReturn: reassurance.indexReturn },
+              explanation: reassurance.explanation,
+            });
+            if (appended) reassuranceEvent = true;
+          }
+        }
       }
     } catch (err) {
       console.warn(`[worker] ${symbol} ${sessionDate}: significance evaluation failed: ${(err as Error).message}`);
@@ -247,7 +278,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
 
     const resolvedPriorEvent = await resolvePriorEvents(symbol, symbolBars[symbolBars.length - 1]!.close, todayRaw.ts);
 
-    results.push({ symbol, sessionDate, outcome: 'evaluated', significanceEvent, resolvedPriorEvent });
+    results.push({ symbol, sessionDate, outcome: 'evaluated', significanceEvent, resolvedPriorEvent, reassuranceEvent });
   }
 
   return results;

@@ -4,6 +4,10 @@ import { DEMO_USER_ID } from '../src/lib/demo-user';
 import { DigestCard } from './components/digest-card';
 import { EmptyState } from './components/empty-state';
 import { MarkAllRead } from './components/mark-all-read';
+import { ReassuranceCard } from './components/reassurance-card';
+import { ResolutionStatsLine } from './components/resolution-stats-line';
+import { SimpleDetailProvider } from './components/simple-detail-context';
+import { SimpleDetailToggle } from './components/simple-detail-toggle';
 import type { DigestItem, DigestTier } from '../src/digest/types';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +27,7 @@ function groupByTier(items: DigestItem[]): Map<DigestTier, DigestItem[]> {
 }
 
 export default async function DigestPage() {
-  const [{ items }, watchlist] = await Promise.all([
+  const [{ items, reassurance, resolutionStats }, watchlist] = await Promise.all([
     getDigestForUser(DEMO_USER_ID),
     listWatchlist(DEMO_USER_ID),
   ]);
@@ -32,6 +36,28 @@ export default async function DigestPage() {
     return (
       <main className="container">
         <EmptyState watchlistCount={watchlist.length} />
+        {reassurance.length > 0 && (
+          <div style={{ maxWidth: 520, margin: '0 auto', paddingBottom: 20 }}>
+            <h2
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--ink-faint)',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                marginBottom: 4,
+              }}
+            >
+              Explained moves
+            </h2>
+            {reassurance.map((card) => (
+              <ReassuranceCard key={card.eventId} card={card} />
+            ))}
+          </div>
+        )}
+        <div style={{ paddingBottom: 60 }}>
+          <ResolutionStatsLine stats={resolutionStats} />
+        </div>
       </main>
     );
   }
@@ -46,20 +72,47 @@ export default async function DigestPage() {
   const allAcks = [...acksBySymbol.entries()].map(([symbol, upToEventId]) => ({ symbol, upToEventId }));
 
   return (
-    <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24 }}>What&rsquo;s new</h1>
-        <MarkAllRead acks={allAcks} />
-      </div>
+    <SimpleDetailProvider>
+      <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, gap: 16 }}>
+          <h1 style={{ fontSize: 24 }}>What&rsquo;s new</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <SimpleDetailToggle />
+            <MarkAllRead acks={allAcks} />
+          </div>
+        </div>
 
-      {TIER_ORDER.map((tier) => {
-        const tierItems = grouped.get(tier)!;
-        if (tierItems.length === 0) return null;
-        return (
-          <section key={tier} style={{ marginBottom: 36 }}>
+        {TIER_ORDER.map((tier) => {
+          const tierItems = grouped.get(tier)!;
+          if (tierItems.length === 0) return null;
+          return (
+            <section key={tier} style={{ marginBottom: 36 }}>
+              <h2
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: 'var(--ink-faint)',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  marginBottom: 4,
+                }}
+              >
+                {SECTION_LABEL[tier]}
+              </h2>
+              <div>
+                {tierItems.map((item, i) => (
+                  <DigestCard key={`${item.symbol}-${item.tier}-${i}`} item={item} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+
+        {reassurance.length > 0 && (
+          <section style={{ marginTop: 44, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
             <h2
               style={{
-                fontFamily: 'var(--font-sans)',
                 fontSize: 11,
                 fontWeight: 500,
                 color: 'var(--ink-faint)',
@@ -68,16 +121,16 @@ export default async function DigestPage() {
                 marginBottom: 4,
               }}
             >
-              {SECTION_LABEL[tier]}
+              Explained moves
             </h2>
-            <div>
-              {tierItems.map((item, i) => (
-                <DigestCard key={`${item.symbol}-${item.tier}-${i}`} item={item} />
-              ))}
-            </div>
+            {reassurance.map((card) => (
+              <ReassuranceCard key={card.eventId} card={card} />
+            ))}
           </section>
-        );
-      })}
-    </main>
+        )}
+
+        <ResolutionStatsLine stats={resolutionStats} />
+      </main>
+    </SimpleDetailProvider>
   );
 }

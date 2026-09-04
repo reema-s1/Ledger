@@ -31,6 +31,9 @@ export async function startWorkerLoop(sources: Sources): Promise<() => void> {
           if (result.resolvedPriorEvent) {
             console.log(`[worker] ${result.symbol} ${result.sessionDate}: resolved a prior event`);
           }
+          if (result.reassuranceEvent) {
+            console.log(`[worker] ${result.symbol} ${result.sessionDate}: reassurance (market-explained)`);
+          }
         }
       },
       onSkip: (label, skipped) => console.warn(`[worker] ${label}: still busy, skipped tick #${skipped}`),

@@ -15,6 +15,7 @@
     "clusters:recompute": "tsx scripts/recompute-clusters.ts",
     "sync-corporate-actions": "tsx scripts/sync-corporate-actions.ts",
     "seed-demo-user": "tsx scripts/seed-demo-user.ts",
+    "resolve-alerts": "tsx scripts/resolve-alerts.ts",
     "worker": "tsx worker/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
