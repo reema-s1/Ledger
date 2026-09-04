@@ -151,6 +151,31 @@ export async function getEventsNeedingResolution(maxTsIso: string, limit = 200):
   );
 }
 
+/** One symbol's events since a date, most recent first — Ask the log's single-symbol retrieval path. */
+export async function getEventsForSymbolSince(symbol: string, sinceIso: string, limit = 20): Promise<EventRow[]> {
+  return query<EventRow>(
+    'SELECT * FROM events WHERE symbol = $1 AND ts >= $2 ORDER BY ts DESC LIMIT $3',
+    [symbol, sinceIso, limit],
+  );
+}
+
+/**
+ * Events across several symbols since a date, most-significant first
+ * (falling back to recency for events with no significance score, e.g.
+ * corporate actions and reassurance) — Ask the log's whole-watchlist
+ * retrieval path, so "what happened" leads with the thing that actually
+ * mattered most, not just whatever happened most recently.
+ */
+export async function getEventsForSymbolsSince(symbols: string[], sinceIso: string, limit = 20): Promise<EventRow[]> {
+  if (symbols.length === 0) return [];
+  return query<EventRow>(
+    `SELECT * FROM events WHERE symbol = ANY($1::text[]) AND ts >= $2
+     ORDER BY significance DESC NULLS LAST, ts DESC
+     LIMIT $3`,
+    [symbols, sinceIso, limit],
+  );
+}
+
 /** Outcome counts across the most recent N resolution events — the calibration line ("14 held, 6 reverted"). */
 export async function getResolutionStats(limit = 20): Promise<{ held: number; partially_reverted: number; reverted: number; total: number }> {
   const rows = await query<{ outcome: string }>(

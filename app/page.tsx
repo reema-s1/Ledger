@@ -1,6 +1,7 @@
 import { getDigestForUser } from '../src/digest/get-digest';
 import { listWatchlist } from '../db/queries/watchlist';
 import { hasSession, getCurrentUserId } from '../src/lib/current-user';
+import { AskLog } from './components/ask-log';
 import { DigestCard } from './components/digest-card';
 import { EmptyState } from './components/empty-state';
 import { Landing } from './components/landing';
@@ -61,8 +62,9 @@ export default async function DigestPage() {
             ))}
           </div>
         )}
-        <div style={{ paddingBottom: 60 }}>
+        <div style={{ maxWidth: 520, margin: '0 auto', paddingBottom: 60 }}>
           <ResolutionStatsLine stats={resolutionStats} />
+          <AskLog />
         </div>
       </main>
     );
@@ -136,6 +138,7 @@ export default async function DigestPage() {
         )}
 
         <ResolutionStatsLine stats={resolutionStats} />
+        <AskLog />
       </main>
     </SimpleDetailProvider>
   );
