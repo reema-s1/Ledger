@@ -45,6 +45,22 @@ export async function getLatestClusterDate(): Promise<string | null> {
   return rows[0]?.session_date ?? null;
 }
 
+/**
+ * The most recently computed cluster set at or before `sessionDate` —
+ * clusters are recomputed weekly (Section 4), so most dates have no row
+ * of their own; Playback's scrubber needs "whichever snapshot was in
+ * effect on this day," not an exact match.
+ */
+export async function getClustersAsOf(sessionDate: string): Promise<ClusterRow[]> {
+  const rows = await query<{ session_date: string }>(
+    'SELECT DISTINCT session_date FROM clusters WHERE session_date <= $1 ORDER BY session_date DESC LIMIT 1',
+    [sessionDate],
+  );
+  const nearest = rows[0]?.session_date;
+  if (!nearest) return [];
+  return getClustersForDate(nearest);
+}
+
 /** The most recently computed cluster containing `symbol`, if any. */
 export async function getLatestClusterForSymbol(symbol: string): Promise<ClusterRow | null> {
   const latestDate = await getLatestClusterDate();

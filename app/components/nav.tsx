@@ -11,6 +11,8 @@ const LINKS = [
   { href: '/system', label: 'System' },
 ];
 
+const PLAYBACK_LINK = { href: '/playback', label: 'Playback' };
+
 /** A symbol page ("/symbol/TCS") counts as active under Digest — there's no nav item of its own for it. */
 function isActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/' || pathname.startsWith('/symbol/');
@@ -22,8 +24,9 @@ async function handleLogout() {
   window.location.href = '/';
 }
 
-export function Nav() {
+export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
   const pathname = usePathname();
+  const links = showPlayback ? [...LINKS, PLAYBACK_LINK] : LINKS;
 
   return (
     <header
@@ -58,7 +61,7 @@ export function Nav() {
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
           <nav style={{ display: 'flex', gap: 24 }}>
-            {LINKS.map((link) => (
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}

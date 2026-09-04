@@ -105,3 +105,11 @@ export async function countIngestedSessionDates(): Promise<number> {
   const row = await queryOne<{ count: number }>('SELECT count(DISTINCT session_date)::int AS count FROM candles');
   return row?.count ?? 0;
 }
+
+/** Every distinct session date with ingested data, oldest first — Playback's scrubber axis. */
+export async function listIngestedSessionDates(): Promise<string[]> {
+  const rows = await query<{ session_date: string }>(
+    'SELECT DISTINCT session_date FROM candles ORDER BY session_date ASC',
+  );
+  return rows.map((r) => r.session_date);
+}

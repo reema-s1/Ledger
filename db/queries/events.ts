@@ -176,6 +176,20 @@ export async function getEventsForSymbolsSince(symbols: string[], sinceIso: stri
   );
 }
 
+/**
+ * Every event for a set of symbols up to (and including) a timestamp,
+ * oldest first — Playback's "what the digest would have looked like on
+ * this day" reconstruction. Not cursor-filtered: this is a historical
+ * replay, independent of what any device has actually acknowledged.
+ */
+export async function getEventsForSymbolsUpTo(symbols: string[], uptoIso: string, limit = 500): Promise<EventRow[]> {
+  if (symbols.length === 0) return [];
+  return query<EventRow>(
+    `SELECT * FROM events WHERE symbol = ANY($1::text[]) AND ts <= $2 ORDER BY id ASC LIMIT $3`,
+    [symbols, uptoIso, limit],
+  );
+}
+
 /** Outcome counts across the most recent N resolution events — the calibration line ("14 held, 6 reverted"). */
 export async function getResolutionStats(limit = 20): Promise<{ held: number; partially_reverted: number; reverted: number; total: number }> {
   const rows = await query<{ outcome: string }>(
