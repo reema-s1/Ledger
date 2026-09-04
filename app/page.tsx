@@ -1,8 +1,9 @@
 import { getDigestForUser } from '../src/digest/get-digest';
 import { listWatchlist } from '../db/queries/watchlist';
-import { DEMO_USER_ID } from '../src/lib/demo-user';
+import { hasSession, getCurrentUserId } from '../src/lib/current-user';
 import { DigestCard } from './components/digest-card';
 import { EmptyState } from './components/empty-state';
+import { Landing } from './components/landing';
 import { MarkAllRead } from './components/mark-all-read';
 import { ReassuranceCard } from './components/reassurance-card';
 import { ResolutionStatsLine } from './components/resolution-stats-line';
@@ -27,9 +28,14 @@ function groupByTier(items: DigestItem[]): Map<DigestTier, DigestItem[]> {
 }
 
 export default async function DigestPage() {
+  if (!(await hasSession())) {
+    return <Landing />;
+  }
+  const userId = await getCurrentUserId();
+
   const [{ items, reassurance, resolutionStats }, watchlist] = await Promise.all([
-    getDigestForUser(DEMO_USER_ID),
-    listWatchlist(DEMO_USER_ID),
+    getDigestForUser(userId),
+    listWatchlist(userId),
   ]);
 
   if (items.length === 0) {

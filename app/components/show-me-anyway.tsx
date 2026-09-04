@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DEMO_USER_ID } from '../../src/lib/demo-user';
+import { getClientUserId } from '../../src/lib/current-user-client';
 
 interface QuietReason {
   symbol: string;
@@ -36,7 +36,7 @@ export function ShowMeAnyway() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/why-quiet?user_id=${DEMO_USER_ID}`);
+      const res = await fetch(`/api/why-quiet?user_id=${getClientUserId()}`);
       if (!res.ok) throw new Error(`server returned ${res.status}`);
       const data = (await res.json()) as { reasons: QuietReason[] };
       const sorted = [...data.reasons].sort((a, b) => (b.zFraction ?? -1) - (a.zFraction ?? -1));

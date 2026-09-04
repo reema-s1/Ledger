@@ -1,12 +1,13 @@
 import { listWatchlist } from '../../db/queries/watchlist';
 import { listActiveSymbols } from '../../db/queries/symbols';
-import { DEMO_USER_ID } from '../../src/lib/demo-user';
+import { getCurrentUserId } from '../../src/lib/current-user';
 import { WatchlistControls, type WatchlistSymbol } from '../components/watchlist-controls';
 
 export const dynamic = 'force-dynamic';
 
 export default async function WatchlistPage() {
-  const [watchlist, allSymbols] = await Promise.all([listWatchlist(DEMO_USER_ID), listActiveSymbols()]);
+  const userId = await getCurrentUserId();
+  const [watchlist, allSymbols] = await Promise.all([listWatchlist(userId), listActiveSymbols()]);
 
   const watchlistedSet = new Set(watchlist.map((w) => w.symbol));
   const bySymbol = new Map(allSymbols.map((s) => [s.symbol, s]));

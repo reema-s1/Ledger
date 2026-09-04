@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { DEMO_USER_ID } from '../../src/lib/demo-user';
+import { getClientUserId } from '../../src/lib/current-user-client';
 
 interface AckButtonProps {
   symbol: string;
@@ -23,7 +23,7 @@ export function AckButton({ symbol, upToEventId, label = 'Mark seen', quiet = fa
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: DEMO_USER_ID,
+          user_id: getClientUserId(),
           symbol,
           up_to_event_id: upToEventId,
           device_id: 'web',

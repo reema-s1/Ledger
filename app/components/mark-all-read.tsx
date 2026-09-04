@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { DEMO_USER_ID } from '../../src/lib/demo-user';
+import { getClientUserId } from '../../src/lib/current-user-client';
 
 export function MarkAllRead({ acks }: { acks: { symbol: string; upToEventId: number }[] }) {
   const router = useRouter();
@@ -11,13 +11,14 @@ export function MarkAllRead({ acks }: { acks: { symbol: string; upToEventId: num
   async function handleClick() {
     setPending(true);
     try {
+      const userId = getClientUserId();
       await Promise.all(
         acks.map((a) =>
           fetch('/api/cursor/ack', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              user_id: DEMO_USER_ID,
+              user_id: userId,
               symbol: a.symbol,
               up_to_event_id: a.upToEventId,
               device_id: 'web',

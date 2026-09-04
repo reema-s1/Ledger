@@ -4,6 +4,8 @@ export interface UserRow {
   id: number;
   display_name: string;
   created_at: Date;
+  username: string | null;
+  password_hash: string | null;
 }
 
 export async function createUser(displayName: string): Promise<UserRow> {
@@ -17,4 +19,8 @@ export async function createUser(displayName: string): Promise<UserRow> {
 
 export async function getUser(id: number): Promise<UserRow | null> {
   return queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [id]);
+}
+
+export async function getUserByUsername(username: string): Promise<UserRow | null> {
+  return queryOne<UserRow>('SELECT * FROM users WHERE username = $1', [username]);
 }

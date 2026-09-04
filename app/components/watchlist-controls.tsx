@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { DEMO_USER_ID } from '../../src/lib/demo-user';
+import { getClientUserId } from '../../src/lib/current-user-client';
 
 export interface WatchlistSymbol {
   symbol: string;
@@ -14,7 +14,7 @@ async function mutate(method: 'POST' | 'DELETE', symbol: string) {
   await fetch('/api/watchlist', {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: DEMO_USER_ID, symbol }),
+    body: JSON.stringify({ user_id: getClientUserId(), symbol }),
   });
 }
 
