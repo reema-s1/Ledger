@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/', label: 'Digest' },
@@ -20,7 +23,15 @@ function Mark() {
   );
 }
 
+/** A symbol page ("/symbol/TCS") counts as active under Digest — there's no nav item of its own for it. */
+function isActive(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/' || pathname.startsWith('/symbol/');
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Nav() {
+  const pathname = usePathname();
+
   return (
     <header
       style={{
@@ -46,6 +57,7 @@ export function Nav() {
             fontWeight: 700,
             letterSpacing: '-0.02em',
             textDecoration: 'none',
+            color: 'var(--ink)',
           }}
         >
           <Mark />
@@ -56,10 +68,10 @@ export function Nav() {
             <Link
               key={link.href}
               href={link.href}
+              className="nav-link"
+              data-active={isActive(pathname, link.href)}
               style={{
                 fontSize: 13.5,
-                fontWeight: 500,
-                color: 'var(--ink-muted)',
                 textDecoration: 'none',
                 letterSpacing: '0.01em',
               }}
