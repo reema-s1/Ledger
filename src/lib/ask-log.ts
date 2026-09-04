@@ -23,6 +23,8 @@ export interface ParsedQuery {
   symbol: string | null;
   sinceDays: number;
   kind: AskLogIntent;
+  /** "red"/"down" -> 'down', "green"/"up" -> 'up', else null. Drives direction-aware filtering in composeAnswer. */
+  sentiment: 'up' | 'down' | null;
 }
 
 export interface AskLogEvent {
@@ -95,11 +97,24 @@ export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[])
   else if (/\b(last|past)\s+week\b/.test(lower)) sinceDays = 7;
   else if (/\byesterday\b/.test(lower)) sinceDays = 2;
 
+  let sentiment: 'up' | 'down' | null = null;
+  if (/\b(red|down|drop(ped)?|fell|falling|crash(ed|ing)?)\b/.test(lower)) sentiment = 'down';
+  else if (/\b(green|up|gain(ed)?|rose|ris(e|ing)|rall(y|ied|ying)|surge[ds]?)\b/.test(lower)) sentiment = 'up';
+
   let kind: AskLogIntent = 'general';
-  if (/\b(red|down|drop(ped)?|fell|falling|crash(ed|ing)?)\b/.test(lower)) kind = 'why_red';
+  if (sentiment !== null) kind = 'why_red';
   else if (/what(?:'s| is| happened| happening)/.test(lower)) kind = 'what_happened';
 
-  return { symbol, sinceDays, kind };
+  return { symbol, sinceDays, kind, sentiment };
+}
+
+/** Reads the direction an explanation string already states — the same "subject's own move" pattern ColorizedHeadline colors. */
+function extractDirection(explanation: string | null): 'up' | 'down' | null {
+  if (!explanation) return null;
+  const match = /\b(up|down|spiked|dropped|rose|fell)\s+[\d.]+%/i.exec(explanation);
+  if (!match) return null;
+  const word = match[1]!.toLowerCase();
+  return word === 'down' || word === 'dropped' || word === 'fell' ? 'down' : 'up';
 }
 
 /**
@@ -117,22 +132,38 @@ export function composeAnswer(parsed: ParsedQuery, events: AskLogEvent[]): AskLo
     return { answer, events: [] };
   }
 
-  if (parsed.kind === 'why_red' && !parsed.symbol && events.every((e) => e.kind === 'reassurance')) {
-    const top = events[0]!;
+  // "Why is my portfolio red/green" must actually answer the direction asked,
+  // not just whatever the most significant event happened to be — a "green"
+  // question surfacing a down-move explanation reads as broken, not helpful.
+  let candidates = events;
+  if (parsed.sentiment) {
+    const matching = events.filter((e) => extractDirection(e.explanation) === parsed.sentiment);
+    if (matching.length === 0) {
+      const word = parsed.sentiment;
+      const answer = parsed.symbol
+        ? `${parsed.symbol} didn't move ${word} in that window.`
+        : `Nothing on your watchlist moved ${word} in that window — ${events.length} other move${events.length === 1 ? '' : 's'} happened instead.`;
+      return { answer, events: events.slice(0, ANSWER_EVENT_CAP) };
+    }
+    candidates = matching;
+  }
+
+  if (parsed.kind === 'why_red' && !parsed.symbol && candidates.every((e) => e.kind === 'reassurance')) {
+    const top = candidates[0]!;
     return {
       answer: top.explanation ?? 'This looks like a market-wide move, nothing specific to one stock.',
-      events: events.slice(0, ANSWER_EVENT_CAP),
+      events: candidates.slice(0, ANSWER_EVENT_CAP),
     };
   }
 
-  const top = events[0]!;
-  const rest = events.slice(1, ANSWER_EVENT_CAP);
+  const top = candidates[0]!;
+  const rest = candidates.slice(1, ANSWER_EVENT_CAP);
   let answer = top.explanation ?? `${top.symbol} had a flagged event with no stored explanation.`;
   if (rest.length > 0) {
     const briefs = rest.map((e) => `${e.symbol} — ${e.explanation ?? 'flagged, no explanation stored'}`);
     answer += ` Also: ${briefs.join('; ')}.`;
   }
-  return { answer, events: events.slice(0, ANSWER_EVENT_CAP) };
+  return { answer, events: candidates.slice(0, ANSWER_EVENT_CAP) };
 }
 
 function toAskLogEvent(e: { id: number; symbol: string; kind: string; ts: Date; explanation: string | null; significance: number | null }): AskLogEvent {

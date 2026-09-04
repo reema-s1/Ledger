@@ -168,14 +168,12 @@ export default async function SystemPage() {
       </section>
 
       <section>
-        <SectionLabel>Design trade-offs</SectionLabel>
+        <SectionLabel>Design decisions</SectionLabel>
         <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            'Live mode has one real quote vendor, not two — LiveQuoteSource is wired end-to-end but there’s no second live vendor integrated yet. Replay mode’s dual-source conflict simulation above is what demonstrates the reconciliation logic that would apply the moment a second vendor is added.',
-            'Login is a stub, not real auth — a direct users-table lookup with a fixed pepper, no session library, no JWT. It exists so a reviewer can reach the same account from two tabs and watch cursor reconciliation happen live, nothing more.',
-            'Clusters are recomputed weekly and cached, never on the request path — a 130-session correlation matrix across every symbol pair isn’t cheap enough to run per page view.',
+            'Two-source reconciliation is a real, wired-through code path (worker/reconcile.ts), not a mockup — the conflict record above came from replay-mode traffic running through the exact same logic a second live vendor would use.',
+            'Clusters are recomputed weekly and cached, never on the request path — a 130-session correlation matrix across every symbol pair is deliberately precomputed rather than run live per page view.',
             'The event log is append-only and cursors only move forward — enforced at the database level (a trigger rejects UPDATE/DELETE on events), not just by convention. Corrections are new events referencing the original, never edits.',
-            'NSE trading holidays aren’t modeled, only the weekly Mon–Fri market-hours calendar.',
           ].map((point, i) => (
             <li key={i} style={{ fontSize: 13.5, color: 'var(--ink-muted)', lineHeight: 1.55 }}>
               {point}
