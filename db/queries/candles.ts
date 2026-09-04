@@ -86,3 +86,22 @@ export async function getCandle(symbol: string, sessionDate: string): Promise<Ca
 export async function getCandlesForDate(sessionDate: string): Promise<CandleRow[]> {
   return query<CandleRow>('SELECT * FROM candles WHERE session_date = $1 ORDER BY symbol', [sessionDate]);
 }
+
+/**
+ * Every candle where two-source reconciliation (worker/reconcile.ts)
+ * disagreed past tolerance — regardless of how long ago, since the
+ * replay dataset's dates drift with "now" (Section 1) and the single
+ * seeded conflict (worker/sources.ts) won't reliably land on "today" by
+ * the time anyone's looking. This is the system panel's durable record
+ * of "the conflict-detection machinery actually ran," not just today's
+ * freshness badge on the symbol page.
+ */
+export async function getUnconfirmedCandles(): Promise<CandleRow[]> {
+  return query<CandleRow>('SELECT * FROM candles WHERE confirmed = false ORDER BY session_date DESC');
+}
+
+/** How many distinct sessions have been ingested so far — the system panel's "day X of the replay" proxy. */
+export async function countIngestedSessionDates(): Promise<number> {
+  const row = await queryOne<{ count: number }>('SELECT count(DISTINCT session_date)::int AS count FROM candles');
+  return row?.count ?? 0;
+}

@@ -9,6 +9,9 @@ const nextConfig = {
   // cached to disk for next time).
   outputFileTracingIncludes: {
     '/api/**/*': ['./data/seed-dataset.json'],
+    // The system panel reads the seed dataset directly (total replay days),
+    // same dynamic-fs-read gap as the API routes above.
+    '/system': ['./data/seed-dataset.json'],
   },
 };
 

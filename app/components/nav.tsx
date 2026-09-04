@@ -8,6 +8,7 @@ const LINKS = [
   { href: '/', label: 'Digest' },
   { href: '/watchlist', label: 'Watchlist' },
   { href: '/clusters', label: 'Clusters' },
+  { href: '/system', label: 'System' },
 ];
 
 /** A symbol page ("/symbol/TCS") counts as active under Digest — there's no nav item of its own for it. */

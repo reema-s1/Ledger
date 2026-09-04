@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Nav } from './components/nav';
+import { DataModeTag } from './components/data-mode-tag';
 import { hasSession } from '../src/lib/current-user';
 import './globals.css';
 
@@ -15,6 +16,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         {showNav && <Nav />}
         {children}
+        <DataModeTag />
       </body>
     </html>
   );
