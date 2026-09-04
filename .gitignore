@@ -1,0 +1,9 @@
+node_modules/
+data/seed-dataset.json
+.next/
+dist/
+*.log
+.env
+.env.local
+next-env.d.ts
+*.tsbuildinfo

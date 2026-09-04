@@ -1,0 +1,38 @@
+{
+  "name": "ledger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A smart market watchlist that shows the diff, not the state.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx scripts/seed.ts",
+    "replay": "tsx scripts/replay.ts",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "sync-symbols": "tsx scripts/sync-symbols.ts",
+    "clusters:recompute": "tsx scripts/recompute-clusters.ts",
+    "sync-corporate-actions": "tsx scripts/sync-corporate-actions.ts",
+    "seed-demo-user": "tsx scripts/seed-demo-user.ts",
+    "worker": "tsx worker/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "next": "^15.5.25",
+    "pg": "^8.13.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

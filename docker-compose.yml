@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger
+      POSTGRES_DB: ledger
+    ports:
+      # Host port 5434 — 5432 is commonly taken by a native Postgres
+      # install and 5433 by another project's container, both true on
+      # this machine. Container-internal port stays 5432.
+      - '5434:5432'
+    volumes:
+      - ledger-db-data:/var/lib/postgresql/data
+
+volumes:
+  ledger-db-data:
