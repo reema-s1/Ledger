@@ -12,7 +12,7 @@ interface AckButtonProps {
   quiet?: boolean;
 }
 
-export function AckButton({ symbol, upToEventId, label = 'Seen', quiet = false }: AckButtonProps) {
+export function AckButton({ symbol, upToEventId, label = 'Mark seen', quiet = false }: AckButtonProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -39,6 +39,7 @@ export function AckButton({ symbol, upToEventId, label = 'Seen', quiet = false }
     <button
       onClick={handleClick}
       disabled={pending}
+      className={quiet ? undefined : 'ack-btn'}
       style={
         quiet
           ? {
@@ -50,18 +51,7 @@ export function AckButton({ symbol, upToEventId, label = 'Seen', quiet = false }
               cursor: pending ? 'default' : 'pointer',
               opacity: pending ? 0.5 : 1,
             }
-          : {
-              background: 'var(--accent-soft)',
-              border: 'none',
-              borderRadius: 999,
-              color: 'var(--up)',
-              fontWeight: 600,
-              fontSize: 12,
-              letterSpacing: '0.02em',
-              padding: '5px 12px',
-              cursor: pending ? 'default' : 'pointer',
-              opacity: pending ? 0.5 : 1,
-            }
+          : undefined
       }
     >
       {pending ? '…' : label}
