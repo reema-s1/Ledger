@@ -15,7 +15,7 @@
  * into a price-move narrative; they're informational, not a move.
  */
 
-import type { DigestEvent, DigestItem, DigestTier } from './types';
+import type { DigestEvent, DigestItem, DigestItemKind, DigestTier } from './types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EPISODE_CUTOFF_MS = 7 * DAY_MS;
@@ -79,6 +79,12 @@ function eventIdsOf(e: EffectiveEvent): number[] {
   return e.resolvedByEventId ? [e.id, e.resolvedByEventId] : [e.id];
 }
 
+/** A resolved event badges as 'resolved' regardless of its original kind — that's the more useful fact once it's resolved. */
+function kindOf(e: EffectiveEvent): DigestItemKind {
+  if (e.resolvedByEventId) return 'resolved';
+  return e.kind as DigestItemKind;
+}
+
 function pluralize(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
@@ -95,6 +101,7 @@ function narrateGroup(symbol: string, events: EffectiveEvent[], tier: DigestTier
   for (const ca of corporateActions) {
     items.push({
       tier,
+      kind: kindOf(ca),
       symbol,
       headline: ca.explanation,
       eventIds: eventIdsOf(ca),
@@ -131,7 +138,10 @@ function narrateGroup(symbol: string, events: EffectiveEvent[], tier: DigestTier
           : `${symbol}: ${pluralize(moves.length, 'move')} flagged since ${first.ts.toISOString().slice(0, 10)}.`;
     }
 
-    items.push({ tier, symbol, headline, eventIds, fromTs: first.ts.toISOString(), toTs: last.ts.toISOString() });
+    // A folded narrative badges as a break if any of the moves it summarizes were one — the
+    // headline differentiator shouldn't disappear just because it got compacted with routine moves.
+    const kind: DigestItemKind = moves.some((m) => m.kind === 'structural_break') ? 'structural_break' : 'residual_move';
+    items.push({ tier, kind, symbol, headline, eventIds, fromTs: first.ts.toISOString(), toTs: last.ts.toISOString() });
   }
 
   return items;
@@ -149,7 +159,15 @@ export function compactEvents(events: DigestEvent[], now: Date): DigestItem[] {
 
   // Recent: individual events, full detail, newest first.
   for (const e of [...buckets.recent].sort((a, b) => b.ts.getTime() - a.ts.getTime())) {
-    items.push({ tier: 'recent', symbol: e.symbol, headline: e.explanation, eventIds: eventIdsOf(e), fromTs: e.ts.toISOString(), toTs: e.ts.toISOString() });
+    items.push({
+      tier: 'recent',
+      kind: kindOf(e),
+      symbol: e.symbol,
+      headline: e.explanation,
+      eventIds: eventIdsOf(e),
+      fromTs: e.ts.toISOString(),
+      toTs: e.ts.toISOString(),
+    });
   }
 
   // Episodes and chapters: one narrative per symbol per tier.

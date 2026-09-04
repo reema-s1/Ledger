@@ -183,6 +183,65 @@ describe('compactEvents — corporate actions never merge into a price-move narr
   });
 });
 
+describe('compactEvents — kind badges', () => {
+  it('tags a recent-tier item with its own kind', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'WIPRO', ts: hoursAgo(2), kind: 'structural_break' }),
+    ];
+    expect(compactEvents(events, NOW)[0]!.kind).toBe('structural_break');
+  });
+
+  it('tags a resolved item as "resolved", overriding its original kind', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'WIPRO', ts: hoursAgo(20), kind: 'residual_move' }),
+      {
+        id: 2,
+        symbol: 'WIPRO',
+        ts: hoursAgo(18),
+        kind: 'event_resolved',
+        payload: { originalEventId: 1 },
+        significance: null,
+        explanation: 'resolved outcome',
+      },
+    ];
+    expect(compactEvents(events, NOW)[0]!.kind).toBe('resolved');
+  });
+
+  it('tags a corporate action item as "corporate_action"', () => {
+    const events: DigestEvent[] = [
+      {
+        id: 1,
+        symbol: 'BAJFINANCE',
+        ts: hoursAgo(5),
+        kind: 'corporate_action',
+        payload: { type: 'split', ratio: 5 },
+        significance: null,
+        explanation: 'BAJFINANCE executed a 1:5 split today.',
+      },
+    ];
+    expect(compactEvents(events, NOW)[0]!.kind).toBe('corporate_action');
+  });
+
+  it('tags a folded episode/chapter narrative as "structural_break" if any folded move was one, even alongside routine moves', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'WIPRO', ts: daysAgo(3), kind: 'residual_move' }),
+      moveEvent({ id: 2, symbol: 'WIPRO', ts: daysAgo(2), kind: 'structural_break' }),
+    ];
+    const items = compactEvents(events, NOW);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.kind).toBe('structural_break');
+  });
+
+  it('tags a folded narrative as "residual_move" when none of the folded moves were a break', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'WIPRO', ts: daysAgo(3), kind: 'residual_move' }),
+      moveEvent({ id: 2, symbol: 'WIPRO', ts: daysAgo(2), kind: 'residual_move' }),
+    ];
+    const items = compactEvents(events, NOW);
+    expect(items[0]!.kind).toBe('residual_move');
+  });
+});
+
 describe('compactEvents — empty input', () => {
   it('returns no items', () => {
     expect(compactEvents([], NOW)).toEqual([]);

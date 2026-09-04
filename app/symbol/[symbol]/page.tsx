@@ -6,6 +6,14 @@ import { getRecentEventsForSymbol } from '../../../db/queries/events';
 import { getLatestClusterForSymbol } from '../../../db/queries/clusters';
 import { Sparkline } from '../../components/sparkline';
 import { WhyGrouped } from '../../components/why-grouped';
+import { ColorizedHeadline } from '../../components/colorized-headline';
+
+const KIND_DOT_COLOR: Record<string, string> = {
+  structural_break: 'var(--down)',
+  corporate_action: 'var(--accent-blue)',
+  event_resolved: 'var(--up)',
+  residual_move: 'var(--unconfirmed)',
+};
 import { checkFreshness, DEFAULT_STALE_THRESHOLD_MS } from '../../../worker/freshness';
 
 export const dynamic = 'force-dynamic';
@@ -151,11 +159,26 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
               borderRadius: 'var(--radius)',
             }}
           >
-            <div className="tabular" style={{ fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}>
-              {e.ts.toISOString().slice(0, 10)} · {e.kind.replace('_', ' ')}
+            <div
+              className="tabular"
+              style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: 'var(--ink-muted)', marginBottom: 4 }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: KIND_DOT_COLOR[e.kind] ?? 'var(--ink-faint)',
+                  flexShrink: 0,
+                }}
+              />
+              <span>
+                {e.ts.toISOString().slice(0, 10)} · {e.kind.replace('_', ' ')}
+              </span>
             </div>
             <p style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 15, margin: 0 }}>
-              {e.explanation}
+              <ColorizedHeadline text={e.explanation ?? ''} />
             </p>
           </div>
         ))}
