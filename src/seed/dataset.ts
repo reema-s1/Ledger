@@ -15,7 +15,7 @@ let cached: SeedDataset | null = null;
  * isn't cached on disk yet (and persisting it once generated, so `npm run
  * replay` works standalone without requiring `npm run seed` first).
  */
-export function loadOrGenerateDataset(seed: string = process.env.LEDGER_SEED ?? DEFAULT_SEED): SeedDataset {
+export function loadOrGenerateDataset(seed: string = process.env.LEDGER_SEED || DEFAULT_SEED): SeedDataset {
   if (cached && cached.seed === seed) return cached;
 
   const p = datasetPath();

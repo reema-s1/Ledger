@@ -1,7 +1,7 @@
 import { generateDataset } from '../src/seed/generate';
 import { writeDataset, DEFAULT_SEED } from '../src/seed/dataset';
 
-const seed = process.env.LEDGER_SEED ?? DEFAULT_SEED;
+const seed = process.env.LEDGER_SEED || DEFAULT_SEED;
 const dataset = generateDataset(seed);
 writeDataset(dataset);
 

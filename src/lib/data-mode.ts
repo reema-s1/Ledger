@@ -16,7 +16,13 @@ import { sessionOpenTs } from './time/market-calendar';
 export type DataMode = 'live' | 'replay';
 
 export function getDataMode(): DataMode {
-  const raw = (process.env.DATA_MODE ?? 'replay').toLowerCase();
+  // `||`, not `??` — an env var that's *set but empty* (e.g. a platform's
+  // dashboard where the key was added but the value field got left
+  // blank) is just as "not configured" as one that's absent entirely,
+  // and should fall back the same way. `??` only catches null/undefined,
+  // so `DATA_MODE=""` used to reach the validation below and throw
+  // "Invalid DATA_MODE \"\"" instead of defaulting to replay.
+  const raw = (process.env.DATA_MODE || 'replay').toLowerCase();
   if (raw !== 'live' && raw !== 'replay') {
     throw new Error(`Invalid DATA_MODE "${raw}". Expected "live" or "replay".`);
   }
