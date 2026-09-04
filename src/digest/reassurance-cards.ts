@@ -38,3 +38,22 @@ export function buildReassuranceCards(events: DigestEvent[], now: Date): Reassur
     .slice(0, MAX_REASSURANCE_CARDS)
     .map(({ magnitude: _magnitude, ...card }) => card);
 }
+
+/**
+ * A single hand-written example, wired to a real watchlist symbol
+ * (ICICIBANK) so its "open the symbol page" link still works normally.
+ * Only ever used behind isDemoReassuranceForced() (src/lib/feature-flags.ts),
+ * as a last-resort substitute when zero real reassurance events exist for
+ * the current window — see get-digest.ts. eventId: -1 is a sentinel no
+ * real event can ever have (ids are a bigserial starting at 1), so
+ * acknowledging this card can never advance a real cursor past a real
+ * event.
+ */
+export function buildDemoFallbackReassuranceCard(now: Date): ReassuranceCard {
+  return {
+    symbol: 'ICICIBANK',
+    headline: "ICICIBANK is up 3.4%. So is the market — Nifty rose 2.0% today. This isn't specific to ICICIBANK.",
+    eventId: -1,
+    ts: now.toISOString(),
+  };
+}

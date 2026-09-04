@@ -8,3 +8,16 @@
 export function isPlaybackEnabled(): boolean {
   return process.env.ENABLE_PLAYBACK === '1';
 }
+
+/**
+ * Reassurance cards only render when a real reassurance-kind event landed
+ * in the last 24h (src/digest/reassurance-cards.ts) — genuine but
+ * unreliable for a scheduled recording, since the seed data's dates drift
+ * with "now". When set, get-digest.ts substitutes one hardcoded example
+ * card whenever there are zero real ones, purely for demo/recording
+ * purposes. Off by default; never affects real judging traffic unless
+ * deliberately enabled.
+ */
+export function isDemoReassuranceForced(): boolean {
+  return process.env.DEMO_FORCE_REASSURANCE === '1';
+}

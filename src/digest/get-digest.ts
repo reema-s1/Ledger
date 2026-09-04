@@ -2,8 +2,9 @@ import { listWatchlist } from '../../db/queries/watchlist';
 import { getCursorOrDefault } from '../../db/queries/cursors';
 import { getEventsSinceForSymbols, getResolutionStats } from '../../db/queries/events';
 import { compactEvents } from './compact';
-import { buildReassuranceCards, type ReassuranceCard } from './reassurance-cards';
+import { buildReassuranceCards, buildDemoFallbackReassuranceCard, type ReassuranceCard } from './reassurance-cards';
 import { attachResolutionNotes } from './resolution-notes';
+import { isDemoReassuranceForced } from '../lib/feature-flags';
 import type { DigestEvent, DigestItem } from './types';
 
 export interface ResolutionStats {
@@ -30,7 +31,10 @@ export interface DigestResult {
 export async function getDigestForUser(userId: number): Promise<DigestResult> {
   const watchlist = await listWatchlist(userId);
   const resolutionStats = await getResolutionStats(20);
-  if (watchlist.length === 0) return { items: [], cursors: {}, reassurance: [], resolutionStats };
+  if (watchlist.length === 0) {
+    const reassurance = isDemoReassuranceForced() ? [buildDemoFallbackReassuranceCard(new Date())] : [];
+    return { items: [], cursors: {}, reassurance, resolutionStats };
+  }
 
   const cursorEntries = await Promise.all(
     watchlist.map(async (w) => ({
@@ -60,7 +64,11 @@ export async function getDigestForUser(userId: number): Promise<DigestResult> {
   const now = new Date();
   const compacted = compactEvents(flaggedEvents, now);
   const items = attachResolutionNotes(compacted, resolutionEvents, now);
-  const reassurance = buildReassuranceCards(reassuranceEvents, now);
+  const realReassurance = buildReassuranceCards(reassuranceEvents, now);
+  const reassurance =
+    realReassurance.length === 0 && isDemoReassuranceForced()
+      ? [buildDemoFallbackReassuranceCard(now)]
+      : realReassurance;
 
   const cursors: Record<string, number> = {};
   for (const c of cursorEntries) cursors[c.symbol] = c.sinceEventId;

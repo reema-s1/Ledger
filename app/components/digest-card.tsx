@@ -9,7 +9,16 @@ import { useSimpleDetail } from './simple-detail-context';
 function formatRange(fromTs: string, toTs: string): string {
   const from = new Date(fromTs);
   const to = new Date(toTs);
-  const fmt = (d: Date) => d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  // Pinned to UTC deliberately: this renders in a Client Component, which
+  // Next.js also renders once on the server for the initial HTML. Without
+  // an explicit timeZone, toLocaleDateString falls back to the runtime's
+  // local timezone — the server (UTC) and a visitor's browser (whatever
+  // their OS is set to) can then compute a different calendar day for the
+  // same instant, which is a real React hydration mismatch, not a false
+  // alarm. Every timestamp in this app is generated/stored UTC-anchored
+  // (see src/seed/generate.ts), so UTC is also the *correct* calendar day
+  // here, not just the safe one.
+  const fmt = (d: Date) => d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   return fromTs === toTs ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
 }
 
