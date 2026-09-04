@@ -2,26 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LedgerMark } from './ledger-mark';
 
 const LINKS = [
   { href: '/', label: 'Digest' },
   { href: '/watchlist', label: 'Watchlist' },
   { href: '/clusters', label: 'Clusters' },
 ];
-
-function Mark() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
-      <defs>
-        <linearGradient id="ledger-mark" x1="2" y1="2" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="var(--accent-blue)" />
-          <stop offset="1" stopColor="var(--accent)" />
-        </linearGradient>
-      </defs>
-      <circle cx="11" cy="11" r="10" fill="url(#ledger-mark)" />
-    </svg>
-  );
-}
 
 /** A symbol page ("/symbol/TCS") counts as active under Digest — there's no nav item of its own for it. */
 function isActive(pathname: string, href: string): boolean {
@@ -60,7 +47,7 @@ export function Nav() {
             color: 'var(--ink)',
           }}
         >
-          <Mark />
+          <LedgerMark />
           Ledger
         </Link>
         <nav style={{ display: 'flex', gap: 24 }}>

@@ -1,4 +1,5 @@
 import { ShowMeAnyway } from './show-me-anyway';
+import { LedgerMark } from './ledger-mark';
 
 interface EmptyStateProps {
   watchlistCount: number;
@@ -22,16 +23,19 @@ export function EmptyState({ watchlistCount }: EmptyStateProps) {
         textAlign: 'center',
       }}
     >
-      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="empty-mark" x1="4" y1="4" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stopColor="var(--accent-blue)" />
-            <stop offset="1" stopColor="var(--accent)" />
-          </linearGradient>
-        </defs>
-        <circle cx="18" cy="18" r="17" stroke="var(--rule)" strokeWidth="1.5" />
-        <circle cx="18" cy="18" r="4" fill="url(#empty-mark)" />
-      </svg>
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          border: '1.5px solid var(--rule)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <LedgerMark size={9} />
+      </div>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)' }}>Nothing needs you today.</h1>
       <p style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
         {watchlistCount} {watchlistCount === 1 ? 'symbol' : 'symbols'} on your watchlist, all quiet.
