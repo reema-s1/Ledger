@@ -40,8 +40,8 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
       }}
     >
       <div
-        className="container"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60 }}
+        className="container-wide"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60, gap: 16 }}
       >
         <Link
           href="/"
@@ -49,19 +49,21 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
             display: 'flex',
             alignItems: 'center',
             gap: 9,
+            flexShrink: 0,
             fontFamily: 'var(--font-sans)',
             fontSize: 19,
             fontWeight: 700,
             letterSpacing: '-0.02em',
             textDecoration: 'none',
             color: 'var(--ink)',
+            whiteSpace: 'nowrap',
           }}
         >
           <LedgerMark />
           Ledger
         </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <nav style={{ display: 'flex', gap: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0 }}>
+          <nav style={{ display: 'flex', gap: 20 }}>
             {links.map((link) => (
               <Link
                 key={link.href}
@@ -72,6 +74,7 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
                   fontSize: 13.5,
                   textDecoration: 'none',
                   letterSpacing: '0.01em',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {link.label}
@@ -89,6 +92,7 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
               fontSize: 13.5,
               letterSpacing: '0.01em',
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
             Log out

@@ -68,4 +68,14 @@ describe('attachResolutionNotes', () => {
     const result = attachResolutionNotes(items, resolutions, NOW);
     expect(result).toHaveLength(1); // not 2
   });
+
+  it('disambiguates a multi-move chapter item — the clause is about one flag, not the aggregate', () => {
+    const items = [chapterItem({ eventIds: [10, 11, 12], headline: 'WIPRO: 3 moves flagged, net up 5.0% since 2026-08-13.' })];
+    const resolutions = [resolutionEvent(99, 'WIPRO', 10, 'Flagged for unusual move — fully reverted since.')];
+
+    const result = attachResolutionNotes(items, resolutions, NOW);
+    expect(result[0]!.headline).toBe(
+      'WIPRO: 3 moves flagged, net up 5.0% since 2026-08-13. One of those, flagged 15 days ago — fully reverted since.',
+    );
+  });
 });

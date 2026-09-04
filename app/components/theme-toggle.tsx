@@ -19,13 +19,40 @@ function applyTheme(theme: Theme) {
   }
 }
 
+function SunIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="5" stroke="currentColor" strokeWidth="2" />
+      <g stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <line x1="12" y1="1.5" x2="12" y2="4.5" />
+        <line x1="12" y1="19.5" x2="12" y2="22.5" />
+        <line x1="1.5" y1="12" x2="4.5" y2="12" />
+        <line x1="19.5" y1="12" x2="22.5" y2="12" />
+        <line x1="4.4" y1="4.4" x2="6.5" y2="6.5" />
+        <line x1="17.5" y1="17.5" x2="19.6" y2="19.6" />
+        <line x1="4.4" y1="19.6" x2="6.5" y2="17.5" />
+        <line x1="17.5" y1="6.5" x2="19.6" y2="4.4" />
+      </g>
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20.5 14.5A9 9 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 /**
- * Same pill pattern as SimpleDetailToggle. No shared React state with
- * other instances — each one reads the current theme straight off
- * data-theme on mount, which is safe because Nav and Landing never
- * render at the same time (one requires a session, the other requires
- * not having one), so there's never two toggles visible to fall out of
- * sync with each other.
+ * One icon button, not a two-option pill — it shows the theme currently
+ * active (sun = light, moon = dark) and clicking it flips straight to
+ * the other. No shared React state with other instances (Nav and
+ * Landing never render at once, so nothing needs to stay in sync).
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);
@@ -42,42 +69,32 @@ export function ThemeToggle() {
 
   if (theme === null) return null;
 
-  function select(next: Theme) {
+  function toggle() {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     applyTheme(next);
   }
 
   return (
-    <div
+    <button
+      onClick={toggle}
+      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       style={{
-        display: 'inline-flex',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 30,
+        height: 30,
         border: '1px solid var(--rule)',
-        borderRadius: 999,
-        padding: 2,
-        gap: 2,
+        borderRadius: '50%',
+        background: 'none',
+        color: 'var(--ink-muted)',
+        cursor: 'pointer',
+        flexShrink: 0,
       }}
     >
-      {(['light', 'dark'] as const).map((option) => (
-        <button
-          key={option}
-          onClick={() => select(option)}
-          aria-label={`${option} mode`}
-          aria-pressed={theme === option}
-          style={{
-            border: 'none',
-            borderRadius: 999,
-            padding: '4px 12px',
-            fontSize: 11.5,
-            fontWeight: 600,
-            textTransform: 'capitalize',
-            cursor: 'pointer',
-            background: theme === option ? 'var(--accent-soft)' : 'transparent',
-            color: theme === option ? 'var(--up)' : 'var(--ink-faint)',
-          }}
-        >
-          {option}
-        </button>
-      ))}
-    </div>
+      {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
+    </button>
   );
 }

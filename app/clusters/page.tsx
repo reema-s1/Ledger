@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getLatestClusterDate, getClustersForDate } from '../../db/queries/clusters';
 import { getRecentlyMovedSymbols } from '../../db/queries/events';
 import { ClusterVisual, type ClusterVisualGroup } from '../components/cluster-visual';
@@ -58,17 +59,27 @@ export default async function ClustersPage() {
 
       <ClusterVisual groups={groups} moved={moved} />
 
-      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {groups.map((g) => (
-          <p key={g.id} style={{ fontSize: 13, color: 'var(--ink-muted)', margin: 0 }}>
-            <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{g.label}</span> —{' '}
-            {method === 'sector'
-              ? `these move together, all ${g.label} companies.`
-              : 'these have moved together over the past 130 sessions.'}{' '}
-            <span style={{ color: 'var(--ink-faint)' }}>
-              (open a symbol page and tap "Why grouped?" for the actual correlation numbers)
-            </span>
-          </p>
+          <div key={g.id}>
+            <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 6px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{g.label}</span> —{' '}
+              {method === 'sector'
+                ? `these move together, all ${g.label} companies.`
+                : 'these have moved together over the past 130 sessions.'}{' '}
+              <span style={{ color: 'var(--ink-faint)' }}>tap a symbol below, then "Why grouped?" for the numbers.</span>
+            </p>
+            <p className="tabular" style={{ fontSize: 12.5, margin: 0 }}>
+              {g.members.map((m, i) => (
+                <span key={m}>
+                  <Link href={`/symbol/${m}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
+                    {m}
+                  </Link>
+                  {i < g.members.length - 1 ? <span style={{ color: 'var(--ink-faint)' }}>, </span> : null}
+                </span>
+              ))}
+            </p>
+          </div>
         ))}
       </div>
     </main>

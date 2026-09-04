@@ -45,7 +45,19 @@ export function attachResolutionNotes(items: DigestItem[], resolutionEvents: Dig
     const resolution = resolutionByOriginal.get(resolvedEventId)!;
     const daysAgo = Math.max(1, Math.round((now.getTime() - new Date(item.fromTs).getTime()) / DAY_MS));
     const dayWord = daysAgo === 1 ? 'day' : 'days';
-    const clause = (resolution.explanation ?? '').replace(/^Flagged for /, `Flagged ${daysAgo} ${dayWord} ago for `);
+    // A chapter item can fold several moves into one "N moves flagged, net
+    // X% since..." headline — appending the resolution clause with the
+    // same "Flagged N days ago" framing read as if it graded that whole
+    // aggregate, when it's really about just one of those moves. Only
+    // reword when there's an aggregate to disambiguate from; a single-move
+    // item has nothing to confuse it with.
+    const clause =
+      item.eventIds.length > 1
+        ? (resolution.explanation ?? '').replace(
+            /^Flagged for [^—]+—\s*/,
+            `One of those, flagged ${daysAgo} ${dayWord} ago — `,
+          )
+        : (resolution.explanation ?? '').replace(/^Flagged for /, `Flagged ${daysAgo} ${dayWord} ago for `);
 
     return {
       ...item,

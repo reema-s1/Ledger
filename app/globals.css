@@ -116,6 +116,16 @@ button {
   padding: 0 24px;
 }
 
+/* The nav bar carries more items than the reading-width page content
+   below it (5 links, the theme toggle, Log out) — sharing .container's
+   680px cap made "space-between" collapse to zero gap between the logo
+   and the first link once Playback + the toggle were added. */
+.container-wide {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
 @keyframes skeleton-pulse {
   0%,
   100% {
