@@ -19,20 +19,6 @@ import { INDEX_SYMBOL } from '../seed/symbols';
 import { createClock, createQuoteSource } from '../lib/data-mode';
 import type { SignificanceInput } from '../significance/types';
 
-/**
- * NIFTY has no row in `symbols` (candles.symbol has a foreign key there),
- * so it's never written to the `candles` table — only fetchable live via
- * QuoteSource, the same way worker/ingest.ts gets it. Every other symbol
- * reads from the DB, which is what's actually been ingested.
- */
-async function fetchIndexBars(days: number): Promise<RawBar[] | null> {
-  const clock = createClock();
-  const source = createQuoteSource(clock);
-  const history = await source.getHistory(INDEX_SYMBOL, days);
-  if (history.length === 0) return null;
-  return history.map((c) => ({ sessionDate: c.sessionDate, close: c.c, volume: c.v }));
-}
-
 export interface QuietReason {
   symbol: string;
   sessionDate: string | null;
@@ -56,9 +42,44 @@ async function fetchAdjustedBars(symbol: string, days: number): Promise<RawBar[]
   return adjustBarsForCorporateActions(raw, toActions(actionRows));
 }
 
-export async function explainWhyQuiet(symbol: string): Promise<QuietReason> {
+/**
+ * Serves both `fetchAdjustedBars` (memoized, so a symbol that's both on
+ * the watchlist and someone else's cluster peer is only ever fetched
+ * once per batch) and the index bars (fetched exactly once regardless of
+ * how many symbols are being explained — this used to be per-symbol,
+ * which combined with a serverless 10s function timeout on a 12-symbol
+ * watchlist was enough to make the whole endpoint 500 on Vercel).
+ */
+class RequestCache {
+  private bars = new Map<string, Promise<RawBar[] | null>>();
+  private indexBars: Promise<RawBar[] | null> | null = null;
+
+  getBars(symbol: string, days: number): Promise<RawBar[] | null> {
+    let p = this.bars.get(symbol);
+    if (!p) {
+      p = fetchAdjustedBars(symbol, days);
+      this.bars.set(symbol, p);
+    }
+    return p;
+  }
+
+  getIndexBars(days: number): Promise<RawBar[] | null> {
+    if (!this.indexBars) {
+      this.indexBars = (async () => {
+        const clock = createClock();
+        const source = createQuoteSource(clock);
+        const history = await source.getHistory(INDEX_SYMBOL, days);
+        if (history.length === 0) return null;
+        return history.map((c) => ({ sessionDate: c.sessionDate, close: c.c, volume: c.v }));
+      })();
+    }
+    return this.indexBars;
+  }
+}
+
+async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<QuietReason> {
   const [symbolBars, actionRows] = await Promise.all([
-    fetchAdjustedBars(symbol, 130),
+    cache.getBars(symbol, 130),
     listCorporateActions(symbol),
   ]);
 
@@ -79,8 +100,8 @@ export async function explainWhyQuiet(symbol: string): Promise<QuietReason> {
   const peers = cluster.members.filter((m) => m !== symbol);
 
   const [indexBarsRaw, peerBarsRaw] = await Promise.all([
-    fetchIndexBars(130),
-    Promise.all(peers.map((p) => fetchAdjustedBars(p, 130))),
+    cache.getIndexBars(130),
+    Promise.all(peers.map((p) => cache.getBars(p, 130))),
   ]);
 
   const indexBars = indexBarsRaw ? alignBars(symbolBars, indexBarsRaw) : null;
@@ -112,5 +133,6 @@ export async function explainWhyQuiet(symbol: string): Promise<QuietReason> {
 }
 
 export async function explainWhyQuietForSymbols(symbols: string[]): Promise<QuietReason[]> {
-  return Promise.all(symbols.map(explainWhyQuiet));
+  const cache = new RequestCache();
+  return Promise.all(symbols.map((s) => explainWhyQuiet(s, cache)));
 }

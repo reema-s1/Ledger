@@ -16,6 +16,7 @@ export function ShowMeAnyway() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reasons, setReasons] = useState<QuietReason[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleToggle() {
     if (open) {
@@ -25,10 +26,14 @@ export function ShowMeAnyway() {
     setOpen(true);
     if (reasons) return;
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/why-quiet?user_id=${DEMO_USER_ID}`);
+      if (!res.ok) throw new Error(`server returned ${res.status}`);
       const data = (await res.json()) as { reasons: QuietReason[] };
       setReasons(data.reasons);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'something went wrong');
     } finally {
       setLoading(false);
     }
@@ -56,6 +61,11 @@ export function ShowMeAnyway() {
           {loading && (
             <p className="tabular" style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
               computing…
+            </p>
+          )}
+          {error && (
+            <p className="tabular" style={{ fontSize: 12, color: 'var(--down)' }}>
+              couldn't load this — {error}
             </p>
           )}
           {reasons?.map((r) => (
