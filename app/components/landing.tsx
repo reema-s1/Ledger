@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { LedgerMark } from './ledger-mark';
+import { ThemeToggle } from './theme-toggle';
 
 type Mode = 'login' | 'signup';
 
@@ -66,6 +67,7 @@ export function Landing() {
   return (
     <main
       style={{
+        position: 'relative',
         minHeight: 'calc(100vh - 60px)',
         display: 'flex',
         alignItems: 'center',
@@ -73,6 +75,9 @@ export function Landing() {
         padding: '48px 24px',
       }}
     >
+      <div style={{ position: 'absolute', top: 20, right: 24 }}>
+        <ThemeToggle />
+      </div>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginBottom: 40 }}>
           <div
