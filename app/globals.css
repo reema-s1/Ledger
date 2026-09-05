@@ -192,3 +192,36 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Nav items are deliberately nowrap/no-shrink (see .container-wide above)
+   so the desktop bar stays crisp - but that same rigidity pushes the whole
+   page wider than a narrow viewport. Below the breakpoint, contain the
+   overflow to a horizontal scroll inside the bar itself instead of letting
+   it stretch the page; desktop is untouched above this width. */
+@media (max-width: 640px) {
+  header .container-wide {
+    justify-content: flex-start !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  header .container-wide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Scrolled-off items (Log out, the theme toggle) have no other visual
+     affordance once they're off-screen - a soft edge fade hints there's
+     more to swipe to. header is already position:sticky, so it's a valid
+     anchor for this absolutely-positioned cue. */
+  header::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 28px;
+    height: 60px;
+    background: linear-gradient(to right, transparent, var(--bg));
+    pointer-events: none;
+  }
+}
