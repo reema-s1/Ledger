@@ -1,0 +1,11 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="ledger-icon-clip">
+      <circle cx="16" cy="16" r="15" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#ledger-icon-clip)">
+    <rect x="0" y="0" width="32" height="32" fill="#00d09c" />
+    <polygon points="0,0 32,0 0,32" fill="#5367ff" />
+  </g>
+</svg>
