@@ -36,20 +36,56 @@ describe('parseQuestion', () => {
     expect(parseQuestion('why is my portfolio red today', SYMBOL_INDEX).symbol).toBeNull();
   });
 
-  it('defaults sinceDays to 1', () => {
-    expect(parseQuestion('why is WIPRO down', SYMBOL_INDEX).sinceDays).toBe(1);
+  it('defaults sinceDays to 30 when no time phrase is mentioned', () => {
+    expect(parseQuestion('why is WIPRO down', SYMBOL_INDEX).sinceDays).toBe(30);
+    expect(parseQuestion('how is reliance doing', SYMBOL_INDEX).sinceDays).toBe(30);
   });
 
-  it('widens to 7 days on "last week"', () => {
+  it('narrows to 1 day on an explicit "today"', () => {
+    expect(parseQuestion('why is my portfolio red today', SYMBOL_INDEX).sinceDays).toBe(1);
+  });
+
+  it('widens to 7 days on "last/past/this week"', () => {
     expect(parseQuestion('what happened last week', SYMBOL_INDEX).sinceDays).toBe(7);
+    expect(parseQuestion('what happened this week', SYMBOL_INDEX).sinceDays).toBe(7);
   });
 
-  it('widens to 30 days on "last month"', () => {
+  it('widens to 30 days on "last/past/this month"', () => {
     expect(parseQuestion('what happened to TCS last month', SYMBOL_INDEX).sinceDays).toBe(30);
+    expect(parseQuestion('what happened to TCS this month', SYMBOL_INDEX).sinceDays).toBe(30);
   });
 
   it('widens to 2 days on "yesterday"', () => {
     expect(parseQuestion('what happened yesterday', SYMBOL_INDEX).sinceDays).toBe(2);
+  });
+
+  it('reads an explicit "last/past N days" window', () => {
+    expect(parseQuestion('anything in the past 30 days', SYMBOL_INDEX).sinceDays).toBe(30);
+    expect(parseQuestion('what happened in the last 5 days', SYMBOL_INDEX).sinceDays).toBe(5);
+  });
+
+  it('reads an explicit typed date range as the window start', () => {
+    const now = new Date('2026-09-05T00:00:00.000Z');
+    // Mar 12 2026 -> Sep 5 2026 is 177 days
+    expect(parseQuestion('why wipro down 12Mar - 20 Jul', SYMBOL_INDEX, now).sinceDays).toBe(177);
+    expect(parseQuestion('what happened from March 12 to July 20', SYMBOL_INDEX, now).sinceDays).toBe(177);
+  });
+
+  it('folds a typed date into the previous year when it would otherwise land in the future', () => {
+    const now = new Date('2026-01-10T00:00:00.000Z');
+    // "20 Dec" relative to Jan 10 2026 must mean Dec 20 2025, not a future date
+    expect(parseQuestion('what happened on 20 Dec', SYMBOL_INDEX, now).sinceDays).toBe(21);
+  });
+
+  it('reads a bare month name ("since Jan") as the 1st of that month', () => {
+    const now = new Date('2026-09-05T00:00:00.000Z');
+    // Jan 1 2026 -> Sep 5 2026 is 247 days
+    expect(parseQuestion('why is reliance down since jan', SYMBOL_INDEX, now).sinceDays).toBe(247);
+  });
+
+  it('prefers a day-qualified date over a bare month name mentioned alongside it', () => {
+    const now = new Date('2026-09-05T00:00:00.000Z');
+    expect(parseQuestion('what happened from March 12 to July 20', SYMBOL_INDEX, now).sinceDays).toBe(177);
   });
 
   it('detects why_red intent and "down" sentiment from "red"/"down"/"drop" language', () => {
@@ -67,6 +103,15 @@ describe('parseQuestion', () => {
 
   it('leaves sentiment null for direction-neutral questions', () => {
     expect(parseQuestion('what happened to WIPRO last month', SYMBOL_INDEX).sentiment).toBeNull();
+  });
+
+  it('does not read the "what\'s up" idiom as an "up" sentiment claim', () => {
+    expect(parseQuestion("what's up with WIPRO", SYMBOL_INDEX).sentiment).toBeNull();
+    expect(parseQuestion("what's up with WIPRO", SYMBOL_INDEX).kind).toBe('what_happened');
+    expect(parseQuestion("what's up today", SYMBOL_INDEX).sentiment).toBeNull();
+    expect(parseQuestion('whats up with TCS', SYMBOL_INDEX).sentiment).toBeNull();
+    // a real direction claim alongside "what's" still reads as "up"
+    expect(parseQuestion("what's happening, is WIPRO up today", SYMBOL_INDEX).sentiment).toBe('up');
   });
 
   it('detects what_happened intent', () => {

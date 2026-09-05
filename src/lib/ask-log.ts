@@ -48,6 +48,62 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const MONTH_ABBR: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/**
+ * Reads explicit calendar dates out of free text ("12 Mar", "12Mar", "March
+ * 12th") — the day/month keyword phrases above ("last week") don't cover a
+ * typed range like "12Mar - 20 Jul". No year is ever typed, so each date is
+ * resolved against `now`'s year, folding back a year if that lands in the
+ * future (asking about a range always means a past range).
+ */
+function parseExplicitDates(text: string, now: Date): Date[] {
+  const dates: Date[] = [];
+  const patterns = [
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s*([a-z]{3,9})\b/gi,
+    /\b([a-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\b/gi,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const first = m[1]!;
+      const second = m[2]!;
+      const firstIsNumeric = /^\d+$/.test(first);
+      const day = parseInt(firstIsNumeric ? first : second, 10);
+      const monthToken = (firstIsNumeric ? second : first).slice(0, 3).toLowerCase();
+      const month = MONTH_ABBR[monthToken];
+      if (month === undefined || day < 1 || day > 31) continue;
+      let candidate = new Date(Date.UTC(now.getUTCFullYear(), month, day));
+      if (candidate.getTime() > now.getTime()) {
+        candidate = new Date(Date.UTC(now.getUTCFullYear() - 1, month, day));
+      }
+      dates.push(candidate);
+    }
+  }
+
+  // "since Jan" / "in March" name a month with no day at all — only read as
+  // the 1st of that month when no day-qualified date matched above, so it
+  // never overrides a more specific date already found (e.g. "March 12").
+  if (dates.length === 0) {
+    const bareMonthRe = /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b/gi;
+    let m: RegExpExecArray | null;
+    while ((m = bareMonthRe.exec(text))) {
+      const month = MONTH_ABBR[m[1]!.slice(0, 3).toLowerCase()];
+      if (month === undefined) continue;
+      let candidate = new Date(Date.UTC(now.getUTCFullYear(), month, 1));
+      if (candidate.getTime() > now.getTime()) {
+        candidate = new Date(Date.UTC(now.getUTCFullYear() - 1, month, 1));
+      }
+      dates.push(candidate);
+    }
+  }
+
+  return dates;
+}
+
 /**
  * Every token worth matching a symbol on: the ticker itself, plus any
  * word from the company name at least 4 characters long (skips short
@@ -78,7 +134,7 @@ function buildSymbolTokens(entries: SymbolIndexEntry[]): { symbol: string; token
  * by construction, which the caller already treats as "whole watchlist,
  * no particular angle" (the scope guardrail: fall back, don't error).
  */
-export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[]): ParsedQuery {
+export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[], now: Date = new Date()): ParsedQuery {
   const lower = question.toLowerCase();
 
   let symbol: string | null = null;
@@ -92,14 +148,35 @@ export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[])
     }
   }
 
-  let sinceDays = 1;
-  if (/\b(last|past)\s+month\b/.test(lower)) sinceDays = 30;
-  else if (/\b(last|past)\s+week\b/.test(lower)) sinceDays = 7;
+  // No time phrase mentioned defaults to 30, not 1 — most questions ("how's
+  // reliance doing", a bare ticker) name no window at all, and a 1-day
+  // default made nearly every one of them come back empty against data
+  // that's flagged and graded over weeks. "Today" stays an explicit 1-day ask.
+  let sinceDays = 30;
+  if (/\btoday\b/.test(lower)) sinceDays = 1;
   else if (/\byesterday\b/.test(lower)) sinceDays = 2;
+  else if (/\b(?:last|past|this)\s+week\b/.test(lower)) sinceDays = 7;
+  else if (/\b(?:last|past|this)\s+month\b/.test(lower)) sinceDays = 30;
+  else {
+    const daysMatch = /\b(?:last|past)\s+(\d+)\s+days?\b/.exec(lower);
+    if (daysMatch) sinceDays = parseInt(daysMatch[1]!, 10);
+  }
 
+  // An explicit typed date ("12Mar - 20 Jul") always wins over the vague
+  // keywords above — it's the most specific window the user could give.
+  const explicitDates = parseExplicitDates(lower, now);
+  if (explicitDates.length > 0) {
+    const earliest = explicitDates.reduce((min, d) => (d < min ? d : min));
+    sinceDays = Math.max(1, Math.ceil((now.getTime() - earliest.getTime()) / (24 * 60 * 60 * 1000)));
+  }
+
+  // "what's up (with X)" is a greeting, not a direction claim — strip the
+  // idiom before scanning for sentiment words, or every "what's up" question
+  // gets misread as asking about an upward move.
+  const sentimentSource = lower.replace(/\bwhat(?:'s| is|s)\s+up\b/g, ' ');
   let sentiment: 'up' | 'down' | null = null;
-  if (/\b(red|down|drop(ped)?|fell|falling|crash(ed|ing)?)\b/.test(lower)) sentiment = 'down';
-  else if (/\b(green|up|gain(ed)?|rose|ris(e|ing)|rall(y|ied|ying)|surge[ds]?)\b/.test(lower)) sentiment = 'up';
+  if (/\b(red|down|drop(ped)?|fell|falling|crash(ed|ing)?)\b/.test(sentimentSource)) sentiment = 'down';
+  else if (/\b(green|up|gain(ed)?|rose|ris(e|ing)|rall(y|ied|ying)|surge[ds]?)\b/.test(sentimentSource)) sentiment = 'up';
 
   let kind: AskLogIntent = 'general';
   if (sentiment !== null) kind = 'why_red';
