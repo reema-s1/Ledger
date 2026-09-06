@@ -125,6 +125,25 @@ Three rules are enforced at the database level, not just by convention:
   `read_cursors.last_event_id < EXCLUDED.last_event_id` — a stale write
   from a slow device is a silent no-op, never a rewind, never an error.
 
+### Why this scales
+
+Every table that costs real compute — `candles`, `corporate_actions`,
+`events`, `clusters` — is keyed by `symbol` (and `session_date`), never by
+user. `watchlist_items` is a plain `(user_id, symbol)` join table, and
+`read_cursors` — the only per-user state tied to market data at all — is
+one bigint offset per `(user_id, symbol)`.
+
+That means ingestion, the significance engine, and clustering all run
+**once per distinct symbol**, shared by every user watching it, not once
+per user's watchlist. Adding the 10,000th guest account watching RELIANCE
+costs one small `read_cursors` row — it triggers no extra polling, no
+re-run significance check, no clustering recompute. Cost scales with the
+size of the tracked symbol universe (bounded — there are only so many
+NSE-listed stocks), not with `users × watchlist size`. Clusters make this
+concrete: `getClustersAsOf` (`db/queries/clusters.ts`) reads a row
+computed once, weekly, and cached — never recomputed on a request no
+matter how many users or watchlists ask for it.
+
 ### Local Postgres
 
 ```bash

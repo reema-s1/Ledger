@@ -64,6 +64,12 @@ long-lived Node worker for ingestion — real two-source conflict
 detection, corporate-action adjustment (splits/bonuses), tiered polling,
 retrospective alert grading, all inspectable live at `/system`.
 
+Every symbol's events, candles, and clusters are computed once and
+shared by every user watching it — a stock followed by a hundred
+watchlists is still ingested once. The only thing that grows per user is
+a handful of tiny read-cursor rows, so watchlist size and user count
+barely touch the cost path.
+
 Full technical write-up (schema, significance engine, clustering math,
 resilience cases, deployment) is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
