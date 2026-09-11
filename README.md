@@ -60,8 +60,8 @@ from the event log, not a separate recording:
 ## Under the hood
 
 Next.js (App Router, TS) + Postgres (plain SQL, no ORM) + a standalone
-long-lived Node worker for ingestion — real two-source conflict
-detection, corporate-action adjustment (splits/bonuses), tiered polling,
+long-lived Node worker for ingestion — two-source conflict detection,
+corporate-action adjustment (splits/bonuses), tiered polling,
 retrospective alert grading. A live telemetry page at `/system` shows the
 real polling tier and interval per symbol, every source disagreement the
 worker has actually caught, and the trade-offs behind each — not
@@ -72,6 +72,37 @@ shared by every user watching it — a stock followed by a hundred
 watchlists is still ingested once. The only thing that grows per user is
 a handful of tiny read-cursor rows, so watchlist size and user count
 barely touch the cost path.
+
+## Data, honestly
+
+- **Historical candles — real.** ~130 trading sessions per symbol
+  (40 NSE stocks + NIFTY), pulled once from Yahoo Finance's `.NS`
+  endpoint (`npm run fetch-real-history`) and committed as a static
+  snapshot — correlation clustering runs on real sector co-movement, not
+  planted correlation.
+- **Corporate actions — real, but none in the current window.** The same
+  fetch pulls real split/bonus events where Yahoo has them (it found a
+  real KOTAKBANK split outside the current 130-session range); none of
+  the 40 symbols happened to split within this specific window, so the
+  corporate-action adjustment path is real but untriggered right now,
+  not staged.
+- **Live quotes — not real.** `DATA_MODE` defaults to `replay`; the
+  `live` fetcher (`src/lib/quotes/live-provider-stub.ts`) is a deliberate
+  stub that fails loudly rather than fake a feed, because this repo
+  doesn't hold NSE vendor credentials.
+- **Two-source conflict detection — the logic is real and tested, the
+  second source isn't independent yet.** In replay mode the "secondary"
+  source is the primary wrapped with jitter plus one injected
+  disagreement, so `reconcileQuotes` has something real to catch; in live
+  mode there's no second vendor wired in at all. The reconciliation
+  algorithm itself doesn't change if a genuine second vendor is added —
+  only `worker/sources.ts` would.
+- **Replay mode still exists, on purpose** — for deterministic
+  demo-safety when markets are closed — but it now replays the real
+  historical data above, deterministically, not a synthetic generator.
+  The synthetic generator (`src/seed/generate.ts`) is untouched as an
+  automatic fallback: delete `data/real-nse-history.json` and `npm run
+  seed` reverts to it instantly, loudly logging that it did.
 
 Full technical write-up (schema, significance engine, clustering math,
 resilience cases, deployment) is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -86,6 +117,10 @@ npm run seed && npm run sync-symbols && npm run sync-corporate-actions \
 npm run worker    # let it run ~20-30s, then Ctrl+C
 npm run dev
 ```
+
+`data/real-nse-history.json` is committed, so `npm run seed` uses real
+data out of the box — `npm run fetch-real-history` only needs running
+again to refresh the window.
 
 Full setup notes, troubleshooting, and a click-through feature checklist:
 [`LOCAL.md`](LOCAL.md).

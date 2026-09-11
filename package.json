@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "seed": "tsx scripts/seed.ts",
+    "fetch-real-history": "tsx scripts/fetch-real-history.ts",
     "replay": "tsx scripts/replay.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "sync-symbols": "tsx scripts/sync-symbols.ts",
