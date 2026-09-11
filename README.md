@@ -51,9 +51,9 @@ click away on "Why grouped?":
 
 ![Correlation clusters](docs/screenshots/clusters.png)
 
-**Playback** reconstructs the digest and cluster grouping exactly as
-they looked on any earlier day — live from the event log, not a separate
-recording:
+**Playback** is time-travel for the watchlist — reconstructs the digest
+and cluster grouping exactly as they looked on any earlier day, live
+from the event log, not a separate recording:
 
 ![Playback scrubber](docs/screenshots/playback.png)
 
@@ -62,7 +62,10 @@ recording:
 Next.js (App Router, TS) + Postgres (plain SQL, no ORM) + a standalone
 long-lived Node worker for ingestion — real two-source conflict
 detection, corporate-action adjustment (splits/bonuses), tiered polling,
-retrospective alert grading, all inspectable live at `/system`.
+retrospective alert grading. A live telemetry page at `/system` shows the
+real polling tier and interval per symbol, every source disagreement the
+worker has actually caught, and the trade-offs behind each — not
+illustrative numbers, the running system's own state.
 
 Every symbol's events, candles, and clusters are computed once and
 shared by every user watching it — a stock followed by a hundred
