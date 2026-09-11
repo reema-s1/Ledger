@@ -14,3 +14,26 @@ export function checkFreshness(asOf: Date, now: Date, staleThresholdMs: number):
 
 /** Default: a quote older than 5 minutes during market hours is stale. */
 export const DEFAULT_STALE_THRESHOLD_MS = 5 * 60 * 1000;
+
+export type FreshnessLevel = 'live' | 'stale' | 'unreachable';
+
+/** A missed poll or two past a symbol's own cadence; not yet worth alarming over. */
+export const STALE_MULTIPLIER = 3;
+/** Far enough past cadence that a single slow tick can't explain it — the source has stopped answering. */
+export const UNREACHABLE_MULTIPLIER = 20;
+
+/**
+ * checkFreshness against one flat threshold treats a cold-tier symbol
+ * (polled every 5 min) as perpetually on the edge of "stale" while a
+ * hot-tier symbol (polled every 5s) could go silent for 5 minutes -
+ * 60x its own cadence - before anything flags it. This scales the
+ * threshold to the symbol's own expected polling interval instead, and
+ * adds a third state for "the source has been unreachable for a while,"
+ * distinct from an ordinary between-polls gap.
+ */
+export function classifyFreshness(asOf: Date, now: Date, expectedIntervalMs: number): FreshnessLevel {
+  const ageMs = now.getTime() - asOf.getTime();
+  if (ageMs <= expectedIntervalMs * STALE_MULTIPLIER) return 'live';
+  if (ageMs <= expectedIntervalMs * UNREACHABLE_MULTIPLIER) return 'stale';
+  return 'unreachable';
+}

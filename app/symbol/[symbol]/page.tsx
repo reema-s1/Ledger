@@ -14,12 +14,22 @@ const KIND_DOT_COLOR: Record<string, string> = {
   event_resolved: 'var(--up)',
   residual_move: 'var(--unconfirmed)',
 };
-import { checkFreshness, DEFAULT_STALE_THRESHOLD_MS } from '../../../worker/freshness';
+import { classifyFreshness } from '../../../worker/freshness';
+import { pollingTierFor } from '../../../worker/polling-tiers';
+import { getWatchlistCounts } from '../../../db/queries/watchlist';
 
 export const dynamic = 'force-dynamic';
 
 function formatPct(pct: number): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+function formatAge(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 export default async function SymbolDetailPage({ params }: { params: Promise<{ symbol: string }> }) {
@@ -29,16 +39,18 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
   const meta = await getSymbol(symbol);
   if (!meta) notFound();
 
-  const [candles, events, cluster] = await Promise.all([
+  const [candles, events, cluster, watchlistCounts] = await Promise.all([
     getRecentCandles(symbol, 20),
     getRecentEventsForSymbol(symbol, 15),
     getLatestClusterForSymbol(symbol),
+    getWatchlistCounts(),
   ]);
 
   const latest = candles[candles.length - 1];
   const prior = candles[candles.length - 2];
   const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
-  const freshness = latest ? checkFreshness(latest.ts, new Date(), DEFAULT_STALE_THRESHOLD_MS) : null;
+  const { intervalMs: expectedIntervalMs } = pollingTierFor(watchlistCounts.get(symbol) ?? 0);
+  const freshness = latest ? classifyFreshness(latest.ts, new Date(), expectedIntervalMs) : null;
 
   const peers = cluster ? cluster.members.filter((m) => m !== symbol) : [];
   const clusterLabel = cluster
@@ -81,6 +93,28 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
           </div>
         )}
       </div>
+
+      {latest && freshness === 'unreachable' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 13,
+            color: 'var(--down)',
+            border: '1px solid var(--down)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '8px 14px',
+            marginBottom: 16,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--down)', flexShrink: 0 }}
+          />
+          Data provider unreachable — showing last known data from {formatAge(Date.now() - latest.ts.getTime())} ago.
+        </div>
+      )}
 
       {latest && (
         <div
