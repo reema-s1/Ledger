@@ -13,9 +13,11 @@ export interface DeliberateConflict {
  * Wraps a QuoteSource to stand in for "a second vendor" in replay/demo
  * mode: small deterministic jitter on every quote (real vendors never
  * agree to the paisa) plus zero or more deliberately large disagreements,
- * so two-source conflict detection has something real to catch. In live
- * mode a genuine second vendor integration would replace this — same
- * documented-gap pattern as src/lib/quotes/live-provider-stub.ts.
+ * so two-source conflict detection has something real to catch. Live
+ * mode's primary source is real now (yahoo-live-fetcher.ts) — this class
+ * is still what stands in for a second vendor there too (see
+ * worker/sources.ts), since NSE's own site blocks non-browser traffic and
+ * no free, genuinely independent second source was found reachable.
  */
 export class NoisyQuoteSource implements QuoteSource {
   constructor(

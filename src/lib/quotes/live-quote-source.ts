@@ -13,10 +13,9 @@ export interface LiveQuoteSourceOptions {
 
 /**
  * Polls a real market-data provider. The actual HTTP/WebSocket integration
- * is injected as a `LiveQuoteFetcher` (see `./live-provider-stub.ts` for the
- * placeholder used until a real provider is wired up) so this class only
- * owns polling/backpressure/error-handling — not any particular vendor's
- * API shape.
+ * is injected as a `LiveQuoteFetcher` (see `./yahoo-live-fetcher.ts` for the
+ * real Yahoo Finance implementation) so this class only owns polling/
+ * backpressure/error-handling — not any particular vendor's API shape.
  */
 export class LiveQuoteSource implements QuoteSource {
   constructor(private readonly opts: LiveQuoteSourceOptions) {}

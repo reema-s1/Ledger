@@ -97,12 +97,17 @@ npx tsc --noEmit
 
 ### Known gap (documented, not hidden)
 
-`LiveQuoteSource` is wired end-to-end but has no real vendor behind it yet
-— `src/lib/quotes/live-provider-stub.ts` throws a clear error if
-`DATA_MODE=live` is set without a real `LiveQuoteFetcher` implementation.
-Swap that stub for a real REST/WebSocket integration when one is chosen;
-nothing else in the codebase needs to change. Also: NSE trading holidays
-aren't modeled, only the weekly Mon-Fri / 09:15-15:30 IST calendar.
+`LiveQuoteSource`'s primary source is real now —
+`src/lib/quotes/yahoo-live-fetcher.ts` implements `LiveQuoteFetcher`
+against Yahoo Finance's public chart endpoint (`meta.regularMarketPrice`/
+`regularMarketTime`), the same source already used for historical seed
+data. What's still unconfigured: a genuinely independent *second* live
+vendor (see Section 5's two-source conflict detection) — NSE's own site
+blocks non-browser traffic (confirmed: a 403 even with a proper
+cookie-handshake attempt), and no other free source with real NSE
+coverage was found reachable. `worker/sources.ts` documents exactly where
+a real second vendor would plug in. Also: NSE trading holidays aren't
+modeled, only the weekly Mon-Fri / 09:15-15:30 IST calendar.
 
 ## Section 2 — Schema and event log
 

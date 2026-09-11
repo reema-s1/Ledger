@@ -86,17 +86,20 @@ barely touch the cost path.
   the 40 symbols happened to split within this specific window, so the
   corporate-action adjustment path is real but untriggered right now,
   not staged.
-- **Live quotes — not real.** `DATA_MODE` defaults to `replay`; the
-  `live` fetcher (`src/lib/quotes/live-provider-stub.ts`) is a deliberate
-  stub that fails loudly rather than fake a feed, because this repo
-  doesn't hold NSE vendor credentials.
+- **Live quotes — real, single source.** `DATA_MODE` still defaults to
+  `replay` for demo-safety, but setting it to `live` pulls real current
+  prices from the same Yahoo Finance endpoint as the historical data
+  (`src/lib/quotes/yahoo-live-fetcher.ts`), not a stub.
 - **Two-source conflict detection — the logic is real and tested, the
-  second source isn't independent yet.** In replay mode the "secondary"
-  source is the primary wrapped with jitter plus one injected
-  disagreement, so `reconcileQuotes` has something real to catch; in live
-  mode there's no second vendor wired in at all. The reconciliation
-  algorithm itself doesn't change if a genuine second vendor is added —
-  only `worker/sources.ts` would.
+  second source isn't independent yet.** In both replay and live mode
+  the "secondary" source is the same primary quote wrapped with jitter
+  (replay also injects one deliberate disagreement), so
+  `reconcileQuotes` has something real to catch. A genuinely independent
+  second live vendor is the one honest gap left: NSE's own site blocks
+  non-browser traffic (confirmed with a 403, even with a proper session
+  handshake), and no other free source with real NSE coverage was
+  reachable. The reconciliation algorithm itself doesn't change if a
+  real second vendor is added later — only `worker/sources.ts` would.
 - **Replay mode still exists, on purpose** — for deterministic
   demo-safety when markets are closed — but it now replays the real
   historical data above, deterministically, not a synthetic generator.

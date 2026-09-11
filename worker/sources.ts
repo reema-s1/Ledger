@@ -32,11 +32,14 @@ export interface Sources {
 /**
  * Primary + secondary QuoteSource for the current DATA_MODE. In replay
  * mode, secondary is the primary wrapped with jitter + the deliberate
- * conflict above. In live mode there's no second vendor wired up yet
- * (same documented gap as Section 1's LiveQuoteSource) — secondary is
- * just a second handle on the same source, which reconcileQuotes will
- * always find "confirmed" since they're identical; wire a real second
- * vendor in here when one exists, nothing else needs to change.
+ * conflict above. Live mode's primary is a real fetch now
+ * (yahoo-live-fetcher.ts) — but there's still no second, genuinely
+ * independent live vendor wired up (NSE's own site blocks non-browser
+ * traffic; no other free source with real NSE coverage was found
+ * reachable) — secondary is just a second handle on the same source,
+ * which reconcileQuotes will always find "confirmed" since they're
+ * identical. Wire a real second vendor in here when one exists; nothing
+ * else needs to change.
  */
 export function createSources(): Sources {
   const clock = createClock();

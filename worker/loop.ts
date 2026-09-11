@@ -23,6 +23,14 @@ export async function startWorkerLoop(sources: Sources): Promise<() => void> {
       label: `${s.symbol}(${tier})`,
       intervalMs,
       task: async () => {
+        // Outside market hours nothing new can exist — skip the fetch
+        // entirely rather than poll an unofficial free endpoint around
+        // the clock for a daily bar that isn't going to change. Replay
+        // mode's own tick timeline only ever advances within session
+        // hours anyway, so this is a no-op gate there, not a behavior
+        // change to already-verified replay ingestion.
+        if (!sources.clock.isMarketOpen()) return;
+
         const results = await ingestSymbol(s.symbol, sources);
         for (const result of results) {
           if (result.significanceEvent) {

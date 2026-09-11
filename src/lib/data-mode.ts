@@ -9,7 +9,7 @@ import { ReplayClock } from './time/replay-clock';
 import type { QuoteSource } from './quotes/quote-source';
 import { LiveQuoteSource } from './quotes/live-quote-source';
 import { ReplayQuoteSource } from './quotes/replay-quote-source';
-import { unconfiguredLiveFetcher } from './quotes/live-provider-stub';
+import { yahooLiveFetcher } from './quotes/yahoo-live-fetcher';
 import { loadOrGenerateDataset } from '../seed/dataset';
 import { sessionOpenTs } from './time/market-calendar';
 
@@ -58,7 +58,7 @@ export function createQuoteSource(clock: Clock, options: CreateQuoteSourceOption
     if (!(clock instanceof LiveClock)) {
       throw new Error('createQuoteSource(mode=live) requires a LiveClock (from createClock("live")).');
     }
-    return new LiveQuoteSource({ fetcher: unconfiguredLiveFetcher });
+    return new LiveQuoteSource({ fetcher: yahooLiveFetcher });
   }
 
   if (!(clock instanceof ReplayClock)) {
