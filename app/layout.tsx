@@ -24,9 +24,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
-        {showNav && <Nav showPlayback={isPlaybackEnabled()} />}
-        {children}
-        <DataModeTag />
+        <div className="app-shell">
+          {showNav && <Nav showPlayback={isPlaybackEnabled()} />}
+          <div className="app-main">
+            {children}
+            <DataModeTag />
+          </div>
+        </div>
       </body>
     </html>
   );

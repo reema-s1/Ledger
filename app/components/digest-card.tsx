@@ -3,8 +3,15 @@
 import Link from 'next/link';
 import type { DigestItem, DigestItemKind } from '../../src/digest/types';
 import { AckButton } from './ack-button';
-import { ColorizedHeadline } from './colorized-headline';
+import { ColorizedHeadline, extractHeadlineDirection } from './colorized-headline';
+import { useExplainLookup, ExplainTrigger, ExplainResultBlock } from './explain-button';
+import { TrendIcon } from './trend-icon';
 import { useSimpleDetail } from './simple-detail-context';
+
+/** Kinds a "Find possible explanation" lookup makes sense for — a residual/
+ * z-score/volume-based flag, per llm-addition.md. Not corporate actions
+ * (already mechanically explained) or resolved-only items (already settled). */
+const EXPLAINABLE_KINDS = new Set<DigestItemKind>(['residual_move', 'structural_break']);
 
 function formatRange(fromTs: string, toTs: string): string {
   const from = new Date(fromTs);
@@ -66,7 +73,7 @@ function simpleHeadline(kind: DigestItemKind, symbol: string): string | null {
   }
 }
 
-export function DigestCard({ item }: { item: DigestItem }) {
+export function DigestCard({ item, showExplain = false }: { item: DigestItem; showExplain?: boolean }) {
   const [mode] = useSimpleDetail();
   const upToEventId = Math.max(...item.eventIds);
   const simple = simpleHeadline(item.kind, item.symbol);
@@ -75,14 +82,22 @@ export function DigestCard({ item }: { item: DigestItem }) {
   // Detailed mode already carries it inside item.headline, but Simple
   // mode replaces headline wholesale, so it has to be re-appended here.
   const simpleText = item.resolutionNote ? `${simple} ${item.resolutionNote}` : simple;
+  const canExplain = showExplain && EXPLAINABLE_KINDS.has(item.kind);
+  // eventIds mixes original flagged-move events with any later resolution
+  // events folded in (see DigestItem's eventIds doc) — a resolution event
+  // always has a strictly higher id than the original it resolves (it's
+  // appended later in the append-only log), so the minimum id in the
+  // group is always an original flagged-move event, never a resolution.
+  const originalEventId = Math.min(...item.eventIds);
+  const explain = useExplainLookup(originalEventId);
+  // Always read off the real headline (not the Simple-mode template text,
+  // which has no percentage in it) so the icon can never disagree with
+  // whichever text is actually showing.
+  const direction = extractHeadlineDirection(item.headline);
 
   return (
     <article
       style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        gap: 16,
         padding: '18px 20px',
         marginBottom: 10,
         background: 'var(--surface)',
@@ -90,24 +105,29 @@ export function DigestCard({ item }: { item: DigestItem }) {
         borderRadius: 'var(--radius)',
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
-        <div
-          className="tabular"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.04em' }}
-        >
-          <KindDot kind={item.kind} />
-          <Link href={`/symbol/${item.symbol}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
-            {item.symbol}
-          </Link>
-          <span>· {formatRange(item.fromTs, item.toTs)}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, minWidth: 0 }}>
+          <div
+            className="tabular"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--ink-muted)', letterSpacing: '0.04em' }}
+          >
+            {direction && <TrendIcon direction={direction} />}
+            <KindDot kind={item.kind} />
+            <Link href={`/symbol/${item.symbol}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
+              {item.symbol}
+            </Link>
+            <span>· {formatRange(item.fromTs, item.toTs)}</span>
+          </div>
+          <p style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 16, lineHeight: 1.45, margin: 0, color: 'var(--ink)' }}>
+            {showSimple ? simpleText : <ColorizedHeadline text={item.headline} />}
+          </p>
         </div>
-        <p style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 16, lineHeight: 1.45, margin: 0, color: 'var(--ink)' }}>
-          {showSimple ? simpleText : <ColorizedHeadline text={item.headline} />}
-        </p>
+        <div style={{ flexShrink: 0, paddingTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <AckButton symbol={item.symbol} upToEventId={upToEventId} />
+          {canExplain && <ExplainTrigger state={explain.state} onClick={explain.run} />}
+        </div>
       </div>
-      <div style={{ flexShrink: 0, paddingTop: 2 }}>
-        <AckButton symbol={item.symbol} upToEventId={upToEventId} />
-      </div>
+      {canExplain && <ExplainResultBlock state={explain.state} result={explain.result} />}
     </article>
   );
 }

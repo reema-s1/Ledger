@@ -1,6 +1,7 @@
 import { getDigestForUser } from '../src/digest/get-digest';
 import { listWatchlist } from '../db/queries/watchlist';
 import { hasSession, getCurrentUserId } from '../src/lib/current-user';
+import { isExplanationLookupEnabled } from '../src/lib/feature-flags';
 import { AskLog } from './components/ask-log';
 import { DigestCard } from './components/digest-card';
 import { EmptyState } from './components/empty-state';
@@ -81,7 +82,7 @@ export default async function DigestPage() {
 
   return (
     <SimpleDetailProvider>
-      <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
+      <main className="container-digest" style={{ paddingTop: 40, paddingBottom: 80 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, gap: 16 }}>
           <h1 style={{ fontSize: 24 }}>What&rsquo;s new</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -90,55 +91,68 @@ export default async function DigestPage() {
           </div>
         </div>
 
-        {TIER_ORDER.map((tier) => {
-          const tierItems = grouped.get(tier)!;
-          if (tierItems.length === 0) return null;
-          return (
-            <section key={tier} style={{ marginBottom: 36 }}>
-              <h2
-                style={{
-                  fontFamily: 'var(--font-sans)',
-                  fontSize: 11,
-                  fontWeight: 500,
-                  color: 'var(--ink-faint)',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  marginBottom: 4,
-                }}
-              >
-                {SECTION_LABEL[tier]}
-              </h2>
-              <div>
-                {tierItems.map((item, i) => (
-                  <DigestCard key={`${item.symbol}-${item.tier}-${i}`} item={item} />
+        <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {TIER_ORDER.map((tier) => {
+              const tierItems = grouped.get(tier)!;
+              if (tierItems.length === 0) return null;
+              return (
+                <section key={tier} style={{ marginBottom: 36 }}>
+                  <h2
+                    style={{
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: 'var(--ink-faint)',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      marginBottom: 4,
+                    }}
+                  >
+                    {SECTION_LABEL[tier]}
+                  </h2>
+                  <div>
+                    {tierItems.map((item, i) => (
+                      <DigestCard
+                        key={`${item.symbol}-${item.tier}-${i}`}
+                        item={item}
+                        showExplain={isExplanationLookupEnabled()}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+
+            {reassurance.length > 0 && (
+              <section style={{ marginTop: 44, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
+                <h2
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: 'var(--ink-faint)',
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    marginBottom: 4,
+                  }}
+                >
+                  Explained moves
+                </h2>
+                {reassurance.map((card) => (
+                  <ReassuranceCard key={card.eventId} card={card} />
                 ))}
-              </div>
-            </section>
-          );
-        })}
+              </section>
+            )}
+          </div>
 
-        {reassurance.length > 0 && (
-          <section style={{ marginTop: 44, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
-            <h2
-              style={{
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'var(--ink-faint)',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginBottom: 4,
-              }}
-            >
-              Explained moves
-            </h2>
-            {reassurance.map((card) => (
-              <ReassuranceCard key={card.eventId} card={card} />
-            ))}
-          </section>
-        )}
-
-        <ResolutionStatsLine stats={resolutionStats} />
-        <AskLog />
+          {/* Sticky so it stays reachable while scrolling past a long card
+              list — the reported problem was that it read as buried at the
+              bottom, not that it belonged at the bottom. */}
+          <aside style={{ width: 300, flexShrink: 0, position: 'sticky', top: 24 }}>
+            <ResolutionStatsLine stats={resolutionStats} />
+            <AskLog />
+          </aside>
+        </div>
       </main>
     </SimpleDetailProvider>
   );

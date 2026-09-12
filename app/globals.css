@@ -110,20 +110,107 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* 680px was tuned for prose reading-width back when the nav was a top bar
+   and this was the only width decision on the page. With a sidebar now
+   claiming the left 220px, a narrow centered column reads as dead space
+   floating in the middle rather than a deliberate layout - the digest's
+   actual content (compact list cards, not paragraphs) doesn't need a
+   narrow line length to stay readable, so there's no readability cost to
+   using more of what the sidebar freed up. */
 .container {
-  max-width: 680px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0 24px;
 }
 
-/* The nav bar carries more items than the reading-width page content
-   below it (5 links, the theme toggle, Log out) — sharing .container's
-   680px cap made "space-between" collapse to zero gap between the logo
-   and the first link once Playback + the toggle were added. */
-.container-wide {
-  max-width: 960px;
+/* Digest only: wide enough for the card column plus a persistent "Ask
+   the log" side panel (see app/page.tsx) without squeezing either -
+   other pages don't need the extra width, so this stays separate from
+   .container rather than widening it for everyone. */
+.container-digest {
+  max-width: 1160px;
   margin: 0 auto;
   padding: 0 24px;
+}
+
+/* App shell: a persistent sidebar + content column on desktop, so the
+   nav uses the width freed up by .container's deliberately narrow
+   (680px, for line-length) reading column instead of sitting cramped
+   into it. Below the mobile breakpoint the sidebar flips to a top bar
+   (see .app-nav's media query) and the shell stacks vertically to match. */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  width: 220px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  border-right: 1px solid var(--rule);
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+
+.app-nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  color: var(--ink);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.app-nav-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-nav-link {
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.app-nav-link[data-active='true'] {
+  background: var(--accent-soft);
+}
+
+.app-nav-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 8px;
+}
+
+.app-nav-logout {
+  background: none;
+  border: none;
+  padding: 9px 12px;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
 }
 
 @keyframes skeleton-pulse {
@@ -193,30 +280,56 @@ button {
   }
 }
 
-/* Nav items are deliberately nowrap/no-shrink (see .container-wide above)
-   so the desktop bar stays crisp - but that same rigidity pushes the whole
-   page wider than a narrow viewport. Below the breakpoint, contain the
-   overflow to a horizontal scroll inside the bar itself instead of letting
-   it stretch the page; desktop is untouched above this width. */
-@media (max-width: 640px) {
-  header .container-wide {
-    justify-content: flex-start !important;
+/* Below the breakpoint the sidebar flips into a horizontally-scrollable
+   top bar instead — a full-height 220px sidebar has no room on a phone.
+   Same underlying elements, just re-flowed row-wise; nav items stay
+   nowrap/no-shrink so the row scrolls instead of wrapping or squeezing. */
+@media (max-width: 768px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-nav {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    height: 60px;
+    gap: 16px;
+    border-right: none;
+    border-bottom: 1px solid var(--rule);
+    padding: 0 16px;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
 
-  header .container-wide::-webkit-scrollbar {
+  .app-nav::-webkit-scrollbar {
     display: none;
+  }
+
+  .app-nav-links {
+    flex-direction: row;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .app-nav-link {
+    white-space: nowrap;
+  }
+
+  .app-nav-footer {
+    margin-top: 0;
+    flex-shrink: 0;
   }
 
   /* Scrolled-off items (Log out, the theme toggle) have no other visual
      affordance once they're off-screen - a soft edge fade hints there's
-     more to swipe to. header is already position:sticky, so it's a valid
-     anchor for this absolutely-positioned cue. */
-  header::after {
+     more to swipe to. .app-nav is the scroll container itself here, so
+     the fade needs its own positioned wrapper rather than the nav element. */
+  .app-shell::after {
     content: '';
-    position: absolute;
+    position: fixed;
     top: 0;
     right: 0;
     width: 28px;

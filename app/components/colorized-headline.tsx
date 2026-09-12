@@ -9,13 +9,24 @@
  */
 const DIRECTION_PATTERN = /\b(up|down|spiked|dropped)\s+([\d.]+%)/i;
 
+function isPositiveDirection(word: string): boolean {
+  const w = word.toLowerCase();
+  return w === 'up' || w === 'spiked';
+}
+
+/** The subject's own move direction, read from the same headline text ColorizedHeadline colors — shared so a direction icon never disagrees with the colored text next to it. */
+export function extractHeadlineDirection(text: string): 'up' | 'down' | null {
+  const match = DIRECTION_PATTERN.exec(text);
+  if (!match) return null;
+  return isPositiveDirection(match[1]!) ? 'up' : 'down';
+}
+
 export function ColorizedHeadline({ text }: { text: string }) {
   const match = DIRECTION_PATTERN.exec(text);
   if (!match) return <>{text}</>;
 
   const full = match[0];
-  const direction = match[1]!.toLowerCase();
-  const isPositive = direction === 'up' || direction === 'spiked';
+  const isPositive = isPositiveDirection(match[1]!);
   const start = match.index;
   const end = start + full.length;
 

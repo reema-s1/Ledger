@@ -21,3 +21,14 @@ export function isPlaybackEnabled(): boolean {
 export function isDemoReassuranceForced(): boolean {
   return process.env.DEMO_FORCE_REASSURANCE === '1';
 }
+
+/**
+ * "Find possible explanation" (llm-addition.md) — an on-demand, search-
+ * grounded LLM lookup for a flagged significance event, kept entirely
+ * separate from the deterministic significance engine. The newest and
+ * least-tested part of the system: ships off by default, one flag cuts
+ * it (button, API route, and DB writes) without touching anything else.
+ */
+export function isExplanationLookupEnabled(): boolean {
+  return process.env.ENABLE_EXPLANATION_LOOKUP === '1';
+}

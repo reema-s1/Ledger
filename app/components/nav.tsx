@@ -30,74 +30,30 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
   const links = showPlayback ? [...LINKS, PLAYBACK_LINK] : LINKS;
 
   return (
-    <header
-      style={{
-        borderBottom: '1px solid var(--rule)',
-        background: 'var(--bg)',
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-      }}
-    >
-      <div
-        className="container-wide"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 60, gap: 16 }}
-      >
-        <Link
-          href="/"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 9,
-            flexShrink: 0,
-            fontFamily: 'var(--font-sans)',
-            fontSize: 19,
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            textDecoration: 'none',
-            color: 'var(--ink)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <LedgerMark />
-          Ledger
-        </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0 }}>
-          <nav style={{ display: 'flex', gap: 20 }}>
-            {links.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="nav-link"
-                data-active={isActive(pathname, link.href)}
-                style={{
-                  fontSize: 13.5,
-                  textDecoration: 'none',
-                  letterSpacing: '0.01em',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-          <ThemeToggle />
-          <button
-            onClick={handleLogout}
-            className="nav-link"
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              fontSize: 13.5,
-              letterSpacing: '0.01em',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+    <header className="app-nav">
+      <Link href="/" className="app-nav-logo">
+        <LedgerMark />
+        Ledger
+      </Link>
+
+      <nav className="app-nav-links">
+        {links.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="nav-link app-nav-link"
+            data-active={isActive(pathname, link.href)}
           >
-            Log out
-          </button>
-        </div>
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="app-nav-footer">
+        <ThemeToggle />
+        <button onClick={handleLogout} className="nav-link app-nav-link app-nav-logout">
+          Log out
+        </button>
       </div>
     </header>
   );
