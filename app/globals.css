@@ -229,6 +229,40 @@ button {
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
 
+/* Cluster visual hover-zoom (app/components/cluster-visual.tsx). Each
+   group and each member node sets transform-box/transform-origin inline
+   (per-element, since it depends on that element's own position) — this
+   only owns the animated part. A slight overshoot easing gives a "pop"
+   feel rather than a flat linear scale; prefers-reduced-motion already
+   zeroes every transition-duration globally (see the media query below),
+   so this degrades to an instant, un-animated state change for anyone
+   who's asked for that. */
+.cluster-hover-zoom {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: default;
+}
+.cluster-hover-zoom:hover {
+  transform: scale(1.14);
+}
+.cluster-node-hover {
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+.cluster-node-hover:hover {
+  transform: scale(1.35);
+}
+
+@keyframes heartbeat-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
 .nav-link {
   color: var(--ink-muted);
   font-weight: 500;

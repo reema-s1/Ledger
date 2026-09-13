@@ -51,6 +51,17 @@ export interface ExplanationLookupResult {
   hypothesis: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
+  /**
+   * The article's own real published timestamp (item 22), straight from
+   * Google News RSS's <pubDate> — not just a bare link. A verbatim quoted
+   * excerpt from inside the article was also asked for, but isn't
+   * implemented: the RSS feed only ever gives a title/link/pubDate, never
+   * the article's body text, so there is nothing real to quote without a
+   * second fetch-and-parse step against arbitrary news sites' HTML (a
+   * materially bigger, fragile, dependency-risking change). Flagged
+   * honestly rather than fabricating a "quote" from the headline alone.
+   */
+  sourcePublishedAt: string | null;
 }
 
 function isoDate(d: Date): string {
@@ -213,14 +224,14 @@ export async function lookupExplanation(
 ): Promise<ExplanationLookupResult> {
   const items = await fetchNewsItems(companyName, eventDate);
   if (items.length === 0) {
-    return { found: false, hypothesis: null, sourceUrl: null, sourceTitle: null };
+    return { found: false, hypothesis: null, sourceUrl: null, sourceTitle: null, sourcePublishedAt: null };
   }
 
   const { system, user } = buildGroundingMessages(symbol, eventDate.toISOString().slice(0, 10), items);
   const reply = await askOpenRouter(system, user);
   const parsed = parseModelResponse(reply, items);
   if (!parsed) {
-    return { found: false, hypothesis: null, sourceUrl: null, sourceTitle: null };
+    return { found: false, hypothesis: null, sourceUrl: null, sourceTitle: null, sourcePublishedAt: null };
   }
 
   const article = items[parsed.index]!;
@@ -229,5 +240,6 @@ export async function lookupExplanation(
     hypothesis: parsed.summary,
     sourceUrl: article.link,
     sourceTitle: article.title,
+    sourcePublishedAt: article.pubDate,
   };
 }

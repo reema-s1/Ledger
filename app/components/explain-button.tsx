@@ -7,6 +7,7 @@ interface ExplainResult {
   hypothesis: string | null;
   sourceUrl: string | null;
   sourceTitle: string | null;
+  sourcePublishedAt?: string | null;
   error?: string;
 }
 
@@ -86,6 +87,11 @@ export function ExplainResultBlock({ state, result }: { state: ExplainState; res
           <a href={result.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: 'var(--accent-blue)' }}>
             {result.sourceTitle ?? 'Source'}
           </a>
+        )}
+        {result.sourcePublishedAt && (
+          <span className="tabular" style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginLeft: 8 }}>
+            · published {new Date(result.sourcePublishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}
+          </span>
         )}
       </div>
     );

@@ -1,5 +1,7 @@
 /** Pure types for hierarchical compaction. No I/O — event rows in, digest items out. */
 
+import type { Decomposition } from '../significance/types';
+
 export interface DigestEvent {
   id: number;
   symbol: string;
@@ -39,4 +41,14 @@ export interface DigestItem {
    * the outcome must stay visible regardless of toggle state.
    */
   resolutionNote?: string;
+  /**
+   * The significance engine's own decomposition for this exact event —
+   * already computed at ingestion time (worker/ingest.ts stores it on
+   * every residual_move/structural_break event's payload) and now simply
+   * read back, not recomputed. Only ever set for a single real event (the
+   * 'recent' tier, or a corporate action), never for an episode/chapter
+   * narrative folding several events together — an aggregate decomposition
+   * across multiple days would be a fabricated number, not a real one.
+   */
+  decomposition?: Decomposition;
 }

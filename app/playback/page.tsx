@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { isPlaybackEnabled } from '../../src/lib/feature-flags';
-import { hasSession } from '../../src/lib/current-user';
+import { hasSession, getCurrentUserId } from '../../src/lib/current-user';
 import { listIngestedSessionDates } from '../../db/queries/candles';
+import { listWatchlist } from '../../db/queries/watchlist';
+import { getFlaggedEventDates } from '../../db/queries/events';
 import { Landing } from '../components/landing';
 import { PlaybackScrubber } from '../components/playback-scrubber';
 
@@ -11,7 +13,12 @@ export default async function PlaybackPage() {
   if (!isPlaybackEnabled()) notFound();
   if (!(await hasSession())) return <Landing />;
 
-  const sessionDates = await listIngestedSessionDates();
+  const userId = await getCurrentUserId();
+  const watchlist = await listWatchlist(userId);
+  const [sessionDates, eventDates] = await Promise.all([
+    listIngestedSessionDates(),
+    getFlaggedEventDates(watchlist.map((w) => w.symbol)),
+  ]);
 
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
@@ -23,7 +30,7 @@ export default async function PlaybackPage() {
       {sessionDates.length === 0 ? (
         <p style={{ color: 'var(--ink-muted)', fontSize: 14 }}>No ingested sessions yet.</p>
       ) : (
-        <PlaybackScrubber sessionDates={sessionDates} />
+        <PlaybackScrubber sessionDates={sessionDates} eventDates={eventDates} />
       )}
     </main>
   );

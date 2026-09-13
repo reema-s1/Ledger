@@ -37,3 +37,31 @@ export function classifyFreshness(asOf: Date, now: Date, expectedIntervalMs: num
   if (ageMs <= expectedIntervalMs * UNREACHABLE_MULTIPLIER) return 'stale';
   return 'unreachable';
 }
+
+/**
+ * A quote's trust state, per the brief's four-state model: 'fresh' (live,
+ * confirmed), 'stale' (older than expected but the last confirmed print),
+ * 'unavailable' (the source has gone quiet — Section 5's `unreachable`),
+ * or 'invalid' (the two-source reconciliation gate rejected it —
+ * `confirmed: false` on the candle, see reconcile.ts). This combines two
+ * already-computed, independent facts (how old is this print, did the
+ * reconciliation gate accept it) into one classification for display —
+ * it doesn't change what either fact means or how either is computed.
+ *
+ * 'invalid' takes priority over the freshness level: a print two sources
+ * disagreed on is untrustworthy regardless of how recent it is — a fresh
+ * but invalid quote is not "fresher" than a stale one, it's a bad number
+ * that just happens to be new. Stale/unavailable/invalid quotes must
+ * never be treated as grounds for a new cursor advance or a new
+ * significance event — already true structurally (worker/ingest.ts skips
+ * significance evaluation whenever `confirmed` is false, and cursors only
+ * ever move on an explicit client ack, never from data freshness).
+ */
+export type QuoteQuality = 'fresh' | 'stale' | 'unavailable' | 'invalid';
+
+export function classifyQuoteQuality(freshness: FreshnessLevel, confirmed: boolean): QuoteQuality {
+  if (!confirmed) return 'invalid';
+  if (freshness === 'unreachable') return 'unavailable';
+  if (freshness === 'stale') return 'stale';
+  return 'fresh';
+}
