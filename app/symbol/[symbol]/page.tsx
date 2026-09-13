@@ -123,6 +123,16 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
       {candles.length >= 2 && (
         <div style={{ marginBottom: 40 }}>
           <Sparkline values={candles.map((c) => c.c)} width={632} height={64} />
+          {/* The line's color reflects the *whole* window's net direction
+              (first vs. last close here), not today's single-day change
+              shown up top — those can legitimately disagree (a small
+              up-day inside an overall downtrend), and previously nothing
+              on the page said the two numbers were answering different
+              questions. */}
+          <p style={{ fontSize: 11, color: 'var(--ink-faint)', margin: '6px 0 0' }}>
+            {candles.length} sessions, {candles[0]!.session_date} → {candles[candles.length - 1]!.session_date} — line
+            color is this window's net direction, not today&rsquo;s move
+          </p>
         </div>
       )}
 
