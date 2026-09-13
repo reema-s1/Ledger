@@ -68,7 +68,28 @@ export default async function ClustersPage() {
 
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Clusters</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
+        <h1 style={{ fontSize: 24 }}>Clusters</h1>
+        <span
+          className="tabular"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            padding: '3px 10px',
+            borderRadius: 999,
+            border: `1px solid ${method === 'sector' ? 'var(--unconfirmed)' : 'var(--accent)'}`,
+            color: method === 'sector' ? 'var(--unconfirmed)' : 'var(--accent)',
+          }}
+          title={
+            method === 'sector'
+              ? 'Not enough real trading history yet for the real correlation math — every group here is just the plain sector label.'
+              : 'Every group below came from real pairwise return correlation on real price history, not sector labels.'
+          }
+        >
+          {method === 'sector' ? 'SECTOR FALLBACK' : 'REAL CORRELATION'}
+        </span>
+      </div>
       <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginTop: 0, marginBottom: 8 }}>
         As of {latestDate} ·{' '}
         {method === 'sector'
@@ -76,10 +97,14 @@ export default async function ClustersPage() {
           : 'grouped by 90-session return correlation'}
         .
       </p>
-      <p style={{ color: 'var(--ink-faint)', fontSize: 12, marginTop: 0, marginBottom: 32 }}>
+      <p style={{ color: 'var(--ink-faint)', fontSize: 12, marginTop: 0, marginBottom: 32, maxWidth: 620, lineHeight: 1.6 }}>
         <span style={{ color: 'var(--down)' }}>●</span> structural break &nbsp;
         <span style={{ color: 'var(--unconfirmed)' }}>●</span> recent move &nbsp;
         <span style={{ color: 'var(--accent)' }}>●</span> tracking its group
+        <br />
+        Every dot is a spoke back to its group's center — a faint one by default, a bold colored one only if that
+        stock has actually moved recently. Distance from center and spoke weight both say the same thing: how far
+        this stock has drifted from its group. Click any dot to open that symbol.
       </p>
 
       <ClusterVisual groups={groups} moved={moved} />

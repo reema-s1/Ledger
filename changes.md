@@ -170,3 +170,15 @@ The core product guarantee (`PROJECT_EXPLAINED.md` section 2, "Idea 1") is that 
 **Hover-zoom on the cluster visual.** `app/components/cluster-visual.tsx`'s SVG groups and member nodes now scale up smoothly on hover (`.cluster-hover-zoom`/`.cluster-node-hover` in `globals.css`, a `transform: scale()` with a slight overshoot easing for a "pop" feel) instead of the flat, static version. Each element sets `transform-box: fill-box; transform-origin: center` inline so it zooms around its own visual center rather than the SVG's (0,0) origin. An invisible, generously-sized hit-circle sits behind each group and each node so hovering the empty space inside the dashed ring (not just a drawn line or a 3px dot) still triggers it. Respects `prefers-reduced-motion` for free — the existing global rule zeroes every `transition-duration`, so this degrades to an instant state change rather than an unwanted animation for anyone who's asked for that. Pure CSS, no JS state, no animation library.
 
 **Files:** `app/clusters/page.tsx`, `app/components/cluster-visual.tsx`, `app/globals.css`.
+
+---
+
+## 2026-09-14 — More user feedback: unexplained spoke lines, not clickable, method not prominent
+
+**"I don't understand these lines / why they're there."** Previously a spoke line from a group's center only appeared for a symbol that had recently moved — meaning most dots had no line and a few did, with nothing anywhere explaining that rule, so it read as an arbitrary inconsistency rather than a signal. Fixed by making the spoke universal: every member now draws a faint, uniform line back to its group's center (the standard "this belongs to this hub" reading), and only a symbol that's actually moved gets a second, bold, colored line drawn on top of it. The legend below the visual now says so explicitly ("Every dot is a spoke back to its group's center — a faint one by default, a bold colored one only if that stock has actually moved recently").
+
+**"Are any of these grouped from our calculation or all just fallback?"** Checked directly against the DB: all 8 current groups are `method = 'correlation'` — real pairwise return correlation, not the sector fallback. This was previously only stated in one line of body copy under the heading, easy to miss. Now also a prominent pill badge next to the page title itself ("REAL CORRELATION" / "SECTOR FALLBACK", styled and colored distinctly, with a tooltip explaining what each means) so the real-vs-fallback state can't be missed by skimming.
+
+**"Weird that it's not clickable in the cluster itself."** Correct — the SVG diagram was hover-only, with no way to click through to a symbol, even though every other place a symbol appears in this app (digest cards, the divergence list right below this same visual, watchlist rows) links to `/symbol/[symbol]`. Fixed: every node is now wrapped in a real `<a href="/symbol/SYMBOL">` (a plain SVG anchor — natively supported, no library, no client-side JS needed), verified against the real rendered page (`href` present for every real symbol in the diagram, not a placeholder).
+
+**Files:** `app/components/cluster-visual.tsx`, `app/clusters/page.tsx`.
