@@ -7,6 +7,8 @@ import { getClientUserId } from '../../src/lib/current-user-client';
 import { Sparkline } from './sparkline';
 import { RangeBar } from './range-bar';
 import { HeartbeatDot } from './heartbeat-dot';
+import { PersonalThreshold } from './personal-threshold';
+import { UndoToast, type UndoState } from './undo-toast';
 import { formatPct } from '../lib/format';
 import type { WatchlistRow } from '../watchlist/rows';
 
@@ -51,20 +53,30 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [toAdd, setToAdd] = useState(available[0]?.symbol ?? '');
+  const [undo, setUndo] = useState<UndoState | null>(null);
 
   async function handleRemove(symbol: string) {
     setPending(symbol);
     await mutate('DELETE', symbol);
     router.refresh();
     setPending(null);
+    // Undoing a remove re-adds the row; the symbol's cursor and any
+    // personal threshold were never touched by removeFromWatchlist, so
+    // this is a real restore, not a fabricated one.
+    setUndo({ message: `Removed ${symbol}.`, onUndo: () => mutate('POST', symbol).then(() => router.refresh()) });
   }
 
   async function handleAdd() {
     if (!toAdd) return;
-    setPending(toAdd);
-    await mutate('POST', toAdd);
+    const symbol = toAdd;
+    setPending(symbol);
+    await mutate('POST', symbol);
     router.refresh();
     setPending(null);
+    // Undoing an add deletes the row outright — a freshly-added symbol
+    // has no prior baseline (cursor defaults to 0, no threshold set), so
+    // there is nothing to restore, only something to remove.
+    setUndo({ message: `Added ${symbol}.`, onUndo: () => mutate('DELETE', symbol).then(() => router.refresh()) });
   }
 
   return (
@@ -107,6 +119,7 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
                         {formatPct(r.sinceCursorPct)} since you left
                       </div>
                     )}
+                    <PersonalThreshold symbol={r.symbol} thresholdPct={r.personalThresholdPct} exceeded={r.thresholdExceeded} />
                   </td>
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     {r.latestClose !== null ? `₹${r.latestClose.toFixed(2)}` : '—'}
@@ -201,6 +214,7 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
           </button>
         </div>
       )}
+      <UndoToast state={undo} onDismiss={() => setUndo(null)} />
     </div>
   );
 }

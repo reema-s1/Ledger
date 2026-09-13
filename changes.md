@@ -100,3 +100,34 @@ The core product guarantee (`PROJECT_EXPLAINED.md` section 2, "Idea 1") is that 
 **Backend surfaces touched:** none. Every data point above already existed behind an exported query function; this only composes them differently for one page.
 
 **Verified against real data, not assumed:** posted a real `POST /api/cursor/ack` for MPHASIS (event 488, 2025-10-27), confirmed the watchlist table rendered "+1.2% since you left" in green (matching real later `residual_move` events for that symbol at ids 490/491/494/495/497), then reverted the ack so demo state is unchanged. Confirmed the range label renders "~11mo range" (not a fabricated "52W") and 12 real ₹ prices/volumes render correctly for the demo user's real 12-symbol watchlist.
+
+---
+
+## 2026-09-14 — Item 19: personal watch-level threshold (real backend storage, not localStorage)
+
+**What changed.** A manual, personal "notify me if this moves more than X%" reminder, entirely separate from the significance engine's own judgment. This explicitly needed real server-side storage per the brief's own instruction not to invent local-only storage that would silently diverge from multi-device sync (the whole product's cursor model exists specifically to avoid that class of bug) — so a small additive migration was added rather than skipped or faked:
+
+- `db/migrations/0007_watch_thresholds.sql` — new table `watch_thresholds (user_id, symbol, threshold_pct)`, its own table rather than a column on `watchlist_items`, since removing a symbol from the watchlist shouldn't force a decision about a personal preference unrelated to tracking it.
+- `db/queries/watch-thresholds.ts`, `app/api/watch-threshold/route.ts` (POST to set, DELETE to clear) — same shape/conventions as the existing `/api/watchlist` route.
+- `app/watchlist/rows.ts` now also reads the user's thresholds and computes `thresholdExceeded` (today's raw `|1D change|` vs. the personal threshold) as a fact entirely separate from `daySignificant` (the engine's own bar) — never conflated.
+- `app/components/personal-threshold.tsx` — a small inline editable badge, deliberately styled with its own icon (🔔) and a neutral accent color, never `--up`/`--down`/`--unconfirmed` (the significance engine's own palette), so it can never read as part of the engine's judgment.
+
+**Backend surfaces touched:** one new table, one new route — both additive, no existing route/schema/computation changed. Verified end-to-end: set a real threshold via the API, confirmed it rendered on the watchlist table, cleared it, confirmed it reverted.
+
+---
+
+## 2026-09-14 — Item 20: verified, not built — no intraday data exists
+
+**Checked before building anything**, per the item's own explicit instruction: `candles` (`db/migrations/0001_init.sql`) has `PRIMARY KEY (symbol, session_date)` — one row per symbol per trading day. There is no intraday tick storage anywhere in this schema. Per the item's explicit fallback instruction, fine-grained intraday scrubbing is **not built**; the existing day-level Playback control (extended with the Reset/Advance/Next-event/Exit controls above, items 12/13) is left as the real, honest granularity this data actually supports.
+
+---
+
+## 2026-09-14 — Items 21, 22, 23: undo, real source timestamps, rule-based multilingual explanations
+
+**Item 21 — explicit undo on watchlist add/remove.** `app/components/undo-toast.tsx` (new) shows a dismissible "Added/Removed X. Undo" toast after either action. Undoing an add deletes the row outright — a freshly-added symbol has no cursor or personal threshold yet, so there's nothing to restore. Undoing a remove re-adds the row; since `removeFromWatchlist` never touches `read_cursors`/`watch_thresholds` (verified in `db/queries/watchlist.ts` — confirmed on the main branch too, this session), the symbol's exact prior cursor position and any personal threshold are simply still there, untouched — a real restore, not a fabricated one. No backend change.
+
+**Item 22 — real source timestamp attached; verbatim quote explicitly not implemented.** `src/lib/explanation-lookup.ts`'s `NewsItem.pubDate` was already fetched from Google News RSS but discarded before reaching the UI — now threaded through as `sourcePublishedAt` on `ExplanationLookupResult`, persisted (`db/migrations/0008_event_explanation_timestamp.sql` adds `event_explanations.source_published_at`), and rendered next to the source link. The other half of the item — a verbatim quoted line from inside the article — is **not implemented**: the RSS feed only ever provides a title/link/pubDate, never the article's body text, so the LLM grounding step (`buildGroundingMessages`) never sees anything to quote from. Fetching and parsing arbitrary news sites' full HTML to extract a real quote would be a materially larger, more fragile change (unreliable per-vendor parsing, a real candidate for "stop and ask before a new external dependency") — flagged honestly here rather than fabricating a "quote" from the headline alone.
+
+**Item 23 — multilingual explanation text, rule-based, no LLM.** `src/digest/structured-explanation.ts` now takes a `locale: 'en' | 'hi'` parameter — a fixed phrase table translates only the words around each number (labels, "up"/"down"/"flat", "market", volume phrasing); every real number (percentages, σ, volume ratio) passes through completely unchanged, verified by a dedicated test asserting the same numbers appear verbatim in both languages. `app/components/structured-explanation-block.tsx` gained an EN/हिं toggle (local component state, no persistence, no backend). Deliberately not a translation API or LLM call, per the item's explicit instruction — a fixed phrase table can't introduce its own interpretation of what a number means, which a model in principle could.
+
+**Files:** `db/migrations/0007_watch_thresholds.sql`, `db/migrations/0008_event_explanation_timestamp.sql` (new), `db/queries/watch-thresholds.ts` (new), `app/api/watch-threshold/route.ts` (new), `app/watchlist/rows.ts`, `app/components/personal-threshold.tsx` (new), `app/components/watchlist-table.tsx`, `app/components/undo-toast.tsx` (new), `db/queries/event-explanations.ts`, `src/lib/explanation-lookup.ts`, `app/api/events/[id]/explain/route.ts`, `app/components/explain-button.tsx`, `src/digest/structured-explanation.ts`, `app/components/structured-explanation-block.tsx`, `tests/digest/structured-explanation.test.ts`.

@@ -10,6 +10,7 @@ import { getRecentCandles, type CandleRow } from '../../db/queries/candles';
 import { getRecentEventsForSymbol, getEventsSince } from '../../db/queries/events';
 import { getCursorOrDefault } from '../../db/queries/cursors';
 import { getWatchlistCounts } from '../../db/queries/watchlist';
+import { listWatchThresholds } from '../../db/queries/watch-thresholds';
 import { classifyFreshness, classifyQuoteQuality, type QuoteQuality } from '../../worker/freshness';
 import { pollingTierFor } from '../../worker/polling-tiers';
 
@@ -37,13 +38,17 @@ export interface WatchlistRow {
   /** "+5% since you left" — null if there's no cursor yet (never read) or no candle at that position. */
   sinceCursorPct: number | null;
   quality: QuoteQuality | null;
+  /** A manual, personal reminder (item 19) — never fed into or read from the significance engine. Null if the user hasn't set one for this symbol. */
+  personalThresholdPct: number | null;
+  /** Whether today's raw |1D change| exceeds the personal threshold — a separate fact from `daySignificant`, never conflated with it. */
+  thresholdExceeded: boolean;
 }
 
 export async function buildWatchlistRows(
   userId: number,
   symbols: { symbol: string; name: string; sector: string }[],
 ): Promise<WatchlistRow[]> {
-  const watcherCounts = await getWatchlistCounts();
+  const [watcherCounts, thresholds] = await Promise.all([getWatchlistCounts(), listWatchThresholds(userId)]);
 
   return Promise.all(
     symbols.map(async (s): Promise<WatchlistRow> => {
@@ -86,12 +91,17 @@ export async function buildWatchlistRows(
       const { intervalMs } = pollingTierFor(watcherCounts.get(s.symbol) ?? 0);
       const quality = latest ? classifyQuoteQuality(classifyFreshness(latest.ts, new Date(), intervalMs), latest.confirmed) : null;
 
+      const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
+      const personalThresholdPct = thresholds.get(s.symbol) ?? null;
+      const thresholdExceeded =
+        personalThresholdPct !== null && dayChangePct !== null && Math.abs(dayChangePct) >= personalThresholdPct;
+
       return {
         symbol: s.symbol,
         name: s.name,
         sector: s.sector,
         latestClose: latest?.c ?? null,
-        dayChangePct: latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null,
+        dayChangePct,
         daySignificant,
         volume: latest?.v ?? null,
         sparklineValues: closes,
@@ -104,6 +114,8 @@ export async function buildWatchlistRows(
         significantSinceCursor,
         sinceCursorPct,
         quality,
+        personalThresholdPct,
+        thresholdExceeded,
       };
     }),
   );

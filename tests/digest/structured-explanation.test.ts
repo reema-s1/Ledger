@@ -52,3 +52,33 @@ describe('buildStructuredExplanation', () => {
     expect(residualLine.text).toContain('4.7σ');
   });
 });
+
+describe('buildStructuredExplanation — locale (item 23)', () => {
+  it('translates labels and phrasing into Hindi without touching any number', () => {
+    const en = buildStructuredExplanation(decomposition({ residual: 0.047, residualZ: 4.7, volumeRatio: 1.8 }), 'IT', 'en');
+    const hi = buildStructuredExplanation(decomposition({ residual: 0.047, residualZ: 4.7, volumeRatio: 1.8 }), 'IT', 'hi');
+
+    expect(hi).toHaveLength(en.length);
+    // Every real number that appears in the English version must appear
+    // verbatim in the Hindi version — translation must never touch a
+    // number the significance engine actually computed.
+    expect(hi.map((l) => l.text).join(' ')).toContain('4.7%');
+    expect(hi.map((l) => l.text).join(' ')).toContain('4.7σ');
+    expect(hi.map((l) => l.text).join(' ')).toContain('1.8');
+    // Labels are genuinely translated, not just copied through unchanged.
+    for (let i = 0; i < en.length; i++) {
+      expect(hi[i]!.label).not.toBe(en[i]!.label);
+    }
+  });
+
+  it('discloses missing volume evidence honestly in Hindi too, not a fabricated ratio', () => {
+    const lines = buildStructuredExplanation(decomposition({ volumeDataMissing: true }), 'IT', 'hi');
+    const volumeLine = lines.find((l) => l.label === 'कारोबार की मात्रा')!;
+    expect(volumeLine.text).toBe('पुष्टि के लिए पर्याप्त इतिहास नहीं');
+  });
+
+  it('defaults to English when no locale is given, unchanged from before item 23', () => {
+    const lines = buildStructuredExplanation(decomposition(), 'IT');
+    expect(lines[0]!.label).toBe('This move');
+  });
+});

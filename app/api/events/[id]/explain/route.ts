@@ -38,6 +38,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       hypothesis: cached.explanation_hypothesis,
       sourceUrl: cached.source_url,
       sourceTitle: cached.source_title,
+      sourcePublishedAt: cached.source_published_at?.toISOString() ?? null,
     });
   }
 
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // degrade the rest of the app — a neutral "couldn't check" beats a
     // stack trace, and nothing else on the page depends on this succeeding.
     console.error(`[explain] lookup failed for event ${eventId}:`, err);
-    return NextResponse.json({ found: false, hypothesis: null, sourceUrl: null, sourceTitle: null, error: 'lookup-failed' });
+    return NextResponse.json({ found: false, hypothesis: null, sourceUrl: null, sourceTitle: null, sourcePublishedAt: null, error: 'lookup-failed' });
   }
 
   await upsertEventExplanation({
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     explanationHypothesis: result.hypothesis,
     sourceUrl: result.sourceUrl,
     sourceTitle: result.sourceTitle,
+    sourcePublishedAt: result.sourcePublishedAt ? new Date(result.sourcePublishedAt) : null,
   });
 
   return NextResponse.json(result);
