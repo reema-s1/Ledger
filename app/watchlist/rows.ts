@@ -71,7 +71,14 @@ export async function buildWatchlistRows(
         ? recentEvents.some((e) => MOVE_KINDS.has(e.kind) && e.ts.toISOString().slice(0, 10) === latest.session_date)
         : false;
 
-      let cursorIndex: number | null = null;
+      // cursor === 0 means "never acknowledged anything for this symbol" —
+      // true for every symbol on a fresh watchlist add, and (until a real
+      // user starts marking things seen) for this whole demo right now.
+      // That's still a real "since you left" story to tell, not nothing:
+      // treat it as a cursor sitting at the very start of the loaded
+      // window, same as an old cursor that predates the window entirely,
+      // rather than skipping the marker/coloring feature altogether.
+      let cursorIndex: number | null = candles.length > 0 ? 0 : null;
       let sinceCursorPct: number | null = null;
       let significantSinceCursor = false;
       if (cursor > 0) {
@@ -79,13 +86,13 @@ export async function buildWatchlistRows(
         const cursorDate = cursorEvent?.ts.toISOString().slice(0, 10);
         const idx = cursorDate ? dateIndex.get(cursorDate) : undefined;
         cursorIndex = idx ?? 0; // predates the loaded window -> mark the whole window as "since you left"
-        const cursorCandle = candles[cursorIndex];
-        if (cursorCandle && latest) {
-          sinceCursorPct = ((latest.c - cursorCandle.c) / cursorCandle.c) * 100;
-        }
-        const since = await getEventsSince(s.symbol, cursor);
-        significantSinceCursor = since.some((e) => MOVE_KINDS.has(e.kind));
       }
+      const cursorCandle = cursorIndex !== null ? candles[cursorIndex] : undefined;
+      if (cursorCandle && latest) {
+        sinceCursorPct = ((latest.c - cursorCandle.c) / cursorCandle.c) * 100;
+      }
+      const since = await getEventsSince(s.symbol, cursor);
+      significantSinceCursor = since.some((e) => MOVE_KINDS.has(e.kind));
 
       const closes = candles.map((c) => c.c);
       const { intervalMs } = pollingTierFor(watcherCounts.get(s.symbol) ?? 0);
