@@ -14,7 +14,13 @@ interface ClusterVisualProps {
 /**
  * "One small visual. Nodes in loose groups, the breaking node drifting
  * out." Hand-built inline SVG, deterministic layout, no chart library —
- * this is the whole visual.
+ * this is the whole visual. Hover interactivity is plain CSS
+ * (`.cluster-hover-zoom`/`.cluster-node-hover` in globals.css) — no JS
+ * state, no animation library: `transform-box: fill-box` lets each
+ * group/node scale around its own visual center instead of the SVG's
+ * (0,0) origin, and a wider invisible hit-circle behind each group means
+ * hovering the empty space inside the dashed ring (not just a stroke
+ * line or a dot) still triggers it.
  */
 export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps) {
   const columns = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(groups.length))));
@@ -34,7 +40,15 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
         const n = group.members.length;
 
         return (
-          <g key={group.id}>
+          <g
+            key={group.id}
+            className="cluster-hover-zoom"
+            style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+          >
+            {/* Invisible, generously-sized hit area so hovering anywhere in
+                the group's cell — not just a drawn line or dot — triggers
+                the zoom. Drawn first so everything else layers on top. */}
+            <circle cx={cx} cy={cy} r={baseRadius + 40} fill="transparent" stroke="none" />
             <circle cx={cx} cy={cy} r={baseRadius + 14} fill="none" stroke="var(--rule)" strokeWidth="1" strokeDasharray="2 4" />
             <text
               x={cx}
@@ -63,10 +77,12 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
               const dotRadius = isBreak ? 5 : isMove ? 4 : 3;
 
               return (
-                <g key={symbol}>
+                <g key={symbol} className="cluster-node-hover" style={{ transformBox: 'fill-box', transformOrigin: 'center' }}>
                   {(isBreak || isMove) && (
                     <line x1={cx} y1={cy} x2={x} y2={y} stroke={dotColor} strokeWidth="0.75" opacity="0.35" />
                   )}
+                  {/* A little invisible padding around the dot itself, same reason as the group's hit circle. */}
+                  <circle cx={x} cy={y} r={dotRadius + 6} fill="transparent" stroke="none" />
                   <circle cx={x} cy={y} r={dotRadius} fill={dotColor}>
                     <title>{symbol}</title>
                   </circle>

@@ -6,9 +6,25 @@ import { DivergenceRow } from '../components/divergence-row';
 
 export const dynamic = 'force-dynamic';
 
-function formatClusterLabel(clusterId: string, method: string): string {
-  if (method === 'sector') return clusterId.replace('sector:', '');
-  return clusterId;
+/**
+ * Correlation cluster ids (e.g. "c52") are internal merge-order counters
+ * from the hierarchical clustering algorithm (src/clustering/
+ * correlation.ts) — every symbol starts as its own singleton "c0..c{n-1}",
+ * and every merge creates a new "c{nextId++}", continuing that same
+ * counter. They were never meant to be shown to a user; this assigns a
+ * clean display number instead, ordered by a stable, meaningful sort
+ * (largest group first, tie-broken alphabetically) rather than exposing
+ * "the 52nd merge operation" as if it meant something.
+ */
+function withDisplayLabels(groups: { id: string; members: string[]; method: string }[]) {
+  const sorted = [...groups].sort((a, b) => {
+    if (b.members.length !== a.members.length) return b.members.length - a.members.length;
+    return a.members[0]!.localeCompare(b.members[0]!);
+  });
+  return sorted.map((g, i) => ({
+    ...g,
+    label: g.method === 'sector' ? g.id.replace('sector:', '') : `Group ${i + 1}`,
+  }));
 }
 
 export default async function ClustersPage() {
@@ -34,13 +50,11 @@ export default async function ClustersPage() {
     getRecentlyMovedSymbols(sinceDate),
   ]);
 
-  const groups: ClusterVisualGroup[] = clusters.map((c) => ({
-    id: c.cluster_id,
-    label: formatClusterLabel(c.cluster_id, c.method),
-    members: c.members,
-  }));
-
   const method = clusters[0]?.method ?? 'sector';
+
+  const groups: ClusterVisualGroup[] = withDisplayLabels(
+    clusters.map((c) => ({ id: c.cluster_id, members: c.members, method: c.method })),
+  );
 
   // Item 15: peer-group divergence, extending this same screen rather than
   // a parallel view — the real decomposition (already computed for "Show

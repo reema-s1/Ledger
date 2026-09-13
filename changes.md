@@ -160,3 +160,13 @@ The core product guarantee (`PROJECT_EXPLAINED.md` section 2, "Idea 1") is that 
 **The dot count (event markers) was checked and is correct, not a bug:** verified directly against the real DB — e.g. TCS genuinely has 8 real flagged `residual_move`/`structural_break` events within its 130-session sparkline window, INFY has 5, ICICIBANK has 1. This is real historical density, not duplicated or misplaced markers. Left as-is pending user feedback on whether the marker density should be visually reduced (e.g. capped to the most recent few) for a cleaner look on a ~140px sparkline.
 
 **Files:** `app/watchlist/rows.ts`.
+
+---
+
+## 2026-09-14 — User feedback: cluster labels and hover-zoom on the Clusters visual
+
+**"Why are the clusters named like that?"** — `c52`, `c55`, `c56` etc. are internal merge-order counters from the hierarchical clustering algorithm (`src/clustering/correlation.ts`): every symbol starts as its own singleton `c0..c{n-1}`, and every merge creates a new `c{nextId++}`, continuing that same counter upward. Never meant to be user-facing — `app/clusters/page.tsx`'s label formatter only stripped the `sector:` prefix for the sector-fallback case and passed correlation cluster ids straight through unchanged. Fixed: `withDisplayLabels()` assigns a clean "Group 1", "Group 2"... numbering, ordered by a stable, meaningful sort (largest group first, tie-broken alphabetically by first member) instead of exposing "the 52nd merge operation" as if it meant something. Purely a display-layer fix — the underlying cluster computation and its real internal ids are untouched.
+
+**Hover-zoom on the cluster visual.** `app/components/cluster-visual.tsx`'s SVG groups and member nodes now scale up smoothly on hover (`.cluster-hover-zoom`/`.cluster-node-hover` in `globals.css`, a `transform: scale()` with a slight overshoot easing for a "pop" feel) instead of the flat, static version. Each element sets `transform-box: fill-box; transform-origin: center` inline so it zooms around its own visual center rather than the SVG's (0,0) origin. An invisible, generously-sized hit-circle sits behind each group and each node so hovering the empty space inside the dashed ring (not just a drawn line or a 3px dot) still triggers it. Respects `prefers-reduced-motion` for free — the existing global rule zeroes every `transition-duration`, so this degrades to an instant state change rather than an unwanted animation for anyone who's asked for that. Pure CSS, no JS state, no animation library.
+
+**Files:** `app/clusters/page.tsx`, `app/components/cluster-visual.tsx`, `app/globals.css`.
