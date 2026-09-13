@@ -20,6 +20,17 @@ interface PlaybackResponse {
 const TIER_LABEL: Record<DigestTier, string> = { recent: 'Today', episode: 'This week', chapter: 'Earlier' };
 const TIER_ORDER: DigestTier[] = ['recent', 'episode', 'chapter'];
 
+const demoButtonStyle = {
+  background: 'var(--surface)',
+  border: '1px solid var(--rule)',
+  borderRadius: 999,
+  padding: '6px 14px',
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--ink)',
+  cursor: 'pointer',
+};
+
 const KIND_COLOR: Record<string, string> = {
   structural_break: 'var(--down)',
   corporate_action: 'var(--accent-blue)',
@@ -27,8 +38,10 @@ const KIND_COLOR: Record<string, string> = {
   residual_move: 'var(--unconfirmed)',
 };
 
-export function PlaybackScrubber({ sessionDates }: { sessionDates: string[] }) {
+export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDates: string[]; eventDates?: string[] }) {
   const [index, setIndex] = useState(sessionDates.length - 1);
+  const eventDateSet = new Set(eventDates);
+  const nextEventIndex = sessionDates.findIndex((d, i) => i > index && eventDateSet.has(d));
   const [data, setData] = useState<PlaybackResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +112,41 @@ export function PlaybackScrubber({ sessionDates }: { sessionDates: string[] }) {
             {sessionDates[sessionDates.length - 1]}
           </span>
         </div>
+      </div>
+
+      {/* A scripted, deterministic demo scenario: reset / advance / jump to
+          the next real flagged event / exit — reusing this same real event
+          log and clock rather than a separate system, so a repeatable
+          walkthrough is just a fixed sequence of clicks on the real feature
+          above, never a fabricated "inject event" that didn't happen. */}
+      <div
+        className="tabular"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          marginBottom: 24,
+          paddingBottom: 20,
+          borderBottom: '1px solid var(--rule)',
+        }}
+      >
+        <button onClick={() => setIndex(0)} disabled={index === 0} style={demoButtonStyle}>
+          ↺ Reset
+        </button>
+        <button onClick={() => setIndex((i) => Math.min(sessionDates.length - 1, i + 1))} disabled={index >= sessionDates.length - 1} style={demoButtonStyle}>
+          Advance +1 day
+        </button>
+        <button
+          onClick={() => nextEventIndex !== -1 && setIndex(nextEventIndex)}
+          disabled={nextEventIndex === -1}
+          style={demoButtonStyle}
+          title={nextEventIndex === -1 ? 'No further real flagged events on this watchlist' : `Jump to ${sessionDates[nextEventIndex]}`}
+        >
+          Next event →
+        </button>
+        <Link href="/" style={{ ...demoButtonStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', marginLeft: 'auto' }}>
+          Exit to live digest
+        </Link>
       </div>
 
       {error && <p style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{error}</p>}

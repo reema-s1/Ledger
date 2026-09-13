@@ -93,6 +93,24 @@ export async function getUnresolvedMoveEvents(symbol: string, limit = 5): Promis
   );
 }
 
+/**
+ * Every distinct session date (among `symbols`) carrying a real flagged
+ * move (residual_move/structural_break) — Playback's "jump to next event"
+ * control, so a scripted demo walkthrough can skip straight to a day
+ * something real happened instead of dragging through quiet days one at
+ * a time. Read-only; no new significance computation.
+ */
+export async function getFlaggedEventDates(symbols: string[]): Promise<string[]> {
+  if (symbols.length === 0) return [];
+  const rows = await query<{ d: string }>(
+    `SELECT DISTINCT (ts AT TIME ZONE 'UTC')::date::text AS d FROM events
+     WHERE symbol = ANY($1::text[]) AND kind IN ('residual_move', 'structural_break')
+     ORDER BY d ASC`,
+    [symbols],
+  );
+  return rows.map((r) => r.d);
+}
+
 /** Most recent events for a symbol, regardless of any cursor — for the symbol detail page. */
 export async function getRecentEventsForSymbol(symbol: string, limit = 20): Promise<EventRow[]> {
   return query<EventRow>('SELECT * FROM events WHERE symbol = $1 ORDER BY id DESC LIMIT $2', [

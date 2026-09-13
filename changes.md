@@ -46,3 +46,35 @@ line on each entry.
 **Backend surfaces touched:** `worker/freshness.ts` gained one new pure function — no existing function's behavior changed, no schema, no route. Verified against real backfilled data: `/symbol/KOTAKBANK` correctly renders "Data provider unreachable for 3d" (the real gap between the committed dataset's last real session, 2026-09-11, and today), and a direct call confirms `explainWhyQuietForSymbols(['TCS'])` returns a real `volumeRatio` (1.18, correctly below the low-liquidity threshold's trigger point) rather than a null/broken value.
 
 **"Stale/unavailable/invalid data must never silently create a cursor advance or a new event" (item 9's explicit requirement) — already true, verified, not newly built:** cursors only ever move on an explicit client `POST /api/cursor/ack`, never from a freshness computation; `worker/ingest.ts` already skips significance evaluation entirely whenever `confirmed` is false (Section 5, pre-existing).
+
+---
+
+## 2026-09-14 — Item 12: explicitly NOT implemented, with reasoning
+
+**Item 12 asked for:** snapshotting read state at session-boundary events (tab/window blur, logout, session timeout) in addition to the existing explicit "Mark seen" — but only if it can't weaken the existing guarantee that opening the app never silently advances the cursor, and explicitly said to flag it in changes.md instead of implementing it if there's a real risk of conflating "glanced at" with "reviewed."
+
+**Decision: not implemented.** All three proposed triggers fail that test:
+
+- **Tab/window blur** fires constantly for reasons that have nothing to do with reading a card — alt-tabbing to answer a message, a phone call, checking a second monitor. A user could open the digest, read nothing, get interrupted, and have every card silently marked seen. This is the textbook "glanced at" vs. "reviewed" conflation the item itself warned about.
+- **Logout** is a more deliberate action than blur, but still doesn't imply every visible card was actually read — someone could open the app, see it's a busy day, and log out without reading anything.
+- **Session timeout** is arguably the *opposite* signal from "reviewed" — it means the user *wasn't there*.
+
+The core product guarantee (`PROJECT_EXPLAINED.md` section 2, "Idea 1") is that a cursor only ever moves on an explicit, deliberate act — "marking something 'seen' just moves your bookmark forward... it never touches the log itself" is stated as close to non-negotiable. None of the three proposed triggers meet that bar. **No code changed for this item** — the existing explicit "Mark seen"/"Mark all read" flow is unchanged.
+
+---
+
+## 2026-09-14 — Item 13: scripted demo scenario via Playback (reset / advance / next event / exit)
+
+**What changed.** The existing Playback feature (`app/playback/`, `/api/playback`) already reconstructs the digest as of any historical date from the real event log, and was already "per-user isolated" by construction — it's a stateless GET keyed by a `date` query param and the requesting user's own watchlist, not a shared mutable server-side clock, so there was never a cross-user interference risk to solve. What was missing was a *scripted* way to move through it:
+
+- `db/queries/events.ts` gained `getFlaggedEventDates(symbols)` — every distinct session date (among a watchlist's symbols) carrying a real flagged move. Plain read-only `SELECT DISTINCT`, no schema change, no new significance computation.
+- `app/playback/page.tsx` now also fetches the current user's watchlist and its flagged dates, passed to `PlaybackScrubber`.
+- `app/components/playback-scrubber.tsx` gained four controls: **Reset** (jump to the first ingested session), **Advance +1 day**, **Next event →** (jump straight to the next real flagged date — "inject event" reinterpreted honestly: rather than fabricate an event that didn't happen, jump to a day something real already did), and **Exit to live digest** (back to `/`).
+
+**Files:** `db/queries/events.ts`, `app/playback/page.tsx`, `app/components/playback-scrubber.tsx`.
+
+**Backend surfaces touched:** one new read-only query function, additive. No new route (still the same `/api/playback?date=` contract), no schema change.
+
+**Verified against real data:** `getFlaggedEventDates` against the real demo user's 12-symbol watchlist returns 81 real distinct flagged dates (2025-10-27 through 2026-09-02) from the actual backfilled event log — not a fixture.
+
+**Why "inject event" wasn't literal fake-event injection:** every other real/simulated distinction in this project is disclosed honestly rather than faked (see `PROJECT_EXPLAINED.md` section 5's whole table) — manufacturing a fake event for a demo button would be the one place that principle broke. Jumping to a real date with a real event serves the same demo purpose (a scripted, deterministic walkthrough that always lands on something interesting) without fabricating data.
