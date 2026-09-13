@@ -16,6 +16,7 @@
  */
 
 import type { DigestEvent, DigestItem, DigestItemKind, DigestTier } from './types';
+import type { Decomposition } from '../significance/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EPISODE_CUTOFF_MS = 7 * DAY_MS;
@@ -23,6 +24,7 @@ const EPISODE_CUTOFF_MS = 7 * DAY_MS;
 interface MovePayload {
   baselineClose?: number;
   triggerClose?: number;
+  decomposition?: Decomposition;
 }
 
 interface ResolutionPayload {
@@ -39,6 +41,8 @@ interface EffectiveEvent {
   payload: MovePayload;
   /** Set when this event was resolved — its resolution event's id, folded in for eventIds. */
   resolvedByEventId?: number;
+  /** The original flagged event's own decomposition, present for residual_move/structural_break regardless of whether it was later resolved — "why was this flagged" doesn't change once something resolves. */
+  decomposition?: Decomposition;
 }
 
 function buildEffectiveEvents(events: DigestEvent[]): EffectiveEvent[] {
@@ -64,6 +68,7 @@ function buildEffectiveEvents(events: DigestEvent[]): EffectiveEvent[] {
       explanation: (resolution?.explanation ?? e.explanation) ?? '',
       payload: e.payload as MovePayload,
       resolvedByEventId: resolution?.id,
+      decomposition: (e.payload as MovePayload).decomposition,
     });
   }
   return effective;
@@ -167,6 +172,7 @@ export function compactEvents(events: DigestEvent[], now: Date): DigestItem[] {
       eventIds: eventIdsOf(e),
       fromTs: e.ts.toISOString(),
       toTs: e.ts.toISOString(),
+      decomposition: e.decomposition,
     });
   }
 

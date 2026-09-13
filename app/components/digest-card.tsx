@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import type { DigestItem, DigestItemKind } from '../../src/digest/types';
 import { AckButton } from './ack-button';
 import { ColorizedHeadline, extractHeadlineDirection } from './colorized-headline';
+import { DecompositionMetrics } from './decomposition-metrics';
+import { StructuredExplanationBlock } from './structured-explanation-block';
 import { useExplainLookup, ExplainTrigger, ExplainResultBlock } from './explain-button';
 import { TrendIcon } from './trend-icon';
 import { useSimpleDetail } from './simple-detail-context';
@@ -75,6 +78,7 @@ function simpleHeadline(kind: DigestItemKind, symbol: string): string | null {
 
 export function DigestCard({ item, showExplain = false }: { item: DigestItem; showExplain?: boolean }) {
   const [mode] = useSimpleDetail();
+  const [expanded, setExpanded] = useState(false);
   const upToEventId = Math.max(...item.eventIds);
   const simple = simpleHeadline(item.kind, item.symbol);
   const showSimple = mode === 'simple' && simple !== null;
@@ -121,12 +125,39 @@ export function DigestCard({ item, showExplain = false }: { item: DigestItem; sh
           <p style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 16, lineHeight: 1.45, margin: 0, color: 'var(--ink)' }}>
             {showSimple ? simpleText : <ColorizedHeadline text={item.headline} />}
           </p>
+          {/* The four metrics every card shows, always — "does this matter"
+              at a glance, per item 2/14: not hidden behind a toggle, and
+              never a folded episode/chapter's fabricated aggregate (those
+              never carry a decomposition — see src/digest/compact.ts). */}
+          {item.decomposition && <DecompositionMetrics d={item.decomposition} />}
         </div>
         <div style={{ flexShrink: 0, paddingTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <AckButton symbol={item.symbol} upToEventId={upToEventId} />
           {canExplain && <ExplainTrigger state={explain.state} onClick={explain.run} />}
         </div>
       </div>
+      {item.decomposition && (
+        <>
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '10px 0 0',
+              margin: 0,
+              color: 'var(--ink-faint)',
+              fontSize: 11.5,
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+              cursor: 'pointer',
+            }}
+            aria-expanded={expanded}
+          >
+            {expanded ? 'Hide breakdown ▴' : 'Show breakdown ▾'}
+          </button>
+          {expanded && <StructuredExplanationBlock d={item.decomposition} />}
+        </>
+      )}
       {canExplain && <ExplainResultBlock state={explain.state} result={explain.result} />}
     </article>
   );

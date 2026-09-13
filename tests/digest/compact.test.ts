@@ -247,3 +247,40 @@ describe('compactEvents — empty input', () => {
     expect(compactEvents([], NOW)).toEqual([]);
   });
 });
+
+describe('compactEvents — decomposition passthrough', () => {
+  const fakeDecomposition = {
+    observedReturn: 0.05,
+    beta: 1.1,
+    indexReturn: 0.01,
+    clusterReturn: 0.02,
+    clusterExcess: 0.009,
+    residual: 0.03,
+    residualZ: 3.2,
+    volumeRatio: 2.1,
+    volumeDataMissing: false,
+    volumeWeightedZ: 3.5,
+    correlationToCluster: 0.8,
+    correlationHistoricalMin: 0.6,
+    correlationHistoricalMax: 0.9,
+    isStructuralBreak: false,
+  };
+
+  it('attaches the real event decomposition to a recent-tier item', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'TCS', ts: hoursAgo(2), payload: { decomposition: fakeDecomposition } }),
+    ];
+    const items = compactEvents(events, NOW);
+    expect(items[0]!.decomposition).toEqual(fakeDecomposition);
+  });
+
+  it('never fabricates an aggregate decomposition for a folded episode/chapter narrative', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'TCS', ts: daysAgo(5), payload: { decomposition: fakeDecomposition } }),
+      moveEvent({ id: 2, symbol: 'TCS', ts: daysAgo(3), payload: { decomposition: fakeDecomposition } }),
+    ];
+    const items = compactEvents(events, NOW);
+    expect(items[0]!.tier).toBe('episode');
+    expect(items[0]!.decomposition).toBeUndefined();
+  });
+});
