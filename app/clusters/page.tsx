@@ -68,28 +68,7 @@ export default async function ClustersPage() {
 
   return (
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
-        <h1 style={{ fontSize: 24 }}>Clusters</h1>
-        <span
-          className="tabular"
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            padding: '3px 10px',
-            borderRadius: 999,
-            border: `1px solid ${method === 'sector' ? 'var(--unconfirmed)' : 'var(--accent)'}`,
-            color: method === 'sector' ? 'var(--unconfirmed)' : 'var(--accent)',
-          }}
-          title={
-            method === 'sector'
-              ? 'Not enough real trading history yet for the real correlation math — every group here is just the plain sector label.'
-              : 'Every group below came from real pairwise return correlation on real price history, not sector labels.'
-          }
-        >
-          {method === 'sector' ? 'SECTOR FALLBACK' : 'REAL CORRELATION'}
-        </span>
-      </div>
+      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Clusters</h1>
       <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginTop: 0, marginBottom: 8 }}>
         As of {latestDate} ·{' '}
         {method === 'sector'

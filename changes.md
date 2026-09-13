@@ -182,3 +182,11 @@ The core product guarantee (`PROJECT_EXPLAINED.md` section 2, "Idea 1") is that 
 **"Weird that it's not clickable in the cluster itself."** Correct — the SVG diagram was hover-only, with no way to click through to a symbol, even though every other place a symbol appears in this app (digest cards, the divergence list right below this same visual, watchlist rows) links to `/symbol/[symbol]`. Fixed: every node is now wrapped in a real `<a href="/symbol/SYMBOL">` (a plain SVG anchor — natively supported, no library, no client-side JS needed), verified against the real rendered page (`href` present for every real symbol in the diagram, not a placeholder).
 
 **Files:** `app/components/cluster-visual.tsx`, `app/clusters/page.tsx`.
+
+---
+
+## 2026-09-14 — User feedback: remove the REAL CORRELATION / SECTOR FALLBACK badge
+
+Removed per explicit request. The plain-text line right below the title ("As of {date} · grouped by 90-session return correlation.") already states the same fact — the pill badge was redundant with it, not the only place it was said.
+
+**Files:** `app/clusters/page.tsx`.
