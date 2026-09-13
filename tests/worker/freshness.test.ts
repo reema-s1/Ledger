@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkFreshness, classifyFreshness } from '../../worker/freshness';
+import { checkFreshness, classifyFreshness, classifyQuoteQuality } from '../../worker/freshness';
 
 describe('checkFreshness', () => {
   it('is live just under the threshold', () => {
@@ -45,5 +45,27 @@ describe('classifyFreshness', () => {
 
   it('sits in stale between the live and unreachable bands', () => {
     expect(classifyFreshness(asOf, minutes(20), 5 * 60 * 1000)).toBe('stale');
+  });
+});
+
+describe('classifyQuoteQuality', () => {
+  it('is fresh when live and confirmed', () => {
+    expect(classifyQuoteQuality('live', true)).toBe('fresh');
+  });
+
+  it('is stale when the freshness level is stale and confirmed', () => {
+    expect(classifyQuoteQuality('stale', true)).toBe('stale');
+  });
+
+  it('is unavailable when the source has gone unreachable', () => {
+    expect(classifyQuoteQuality('unreachable', true)).toBe('unavailable');
+  });
+
+  it('is invalid when unconfirmed, even if the print is otherwise live', () => {
+    expect(classifyQuoteQuality('live', false)).toBe('invalid');
+  });
+
+  it('prioritizes invalid over unavailable — a bad print is a bad print regardless of age', () => {
+    expect(classifyQuoteQuality('unreachable', false)).toBe('invalid');
   });
 });

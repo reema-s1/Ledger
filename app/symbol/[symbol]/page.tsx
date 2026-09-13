@@ -7,6 +7,10 @@ import { getLatestClusterForSymbol } from '../../../db/queries/clusters';
 import { Sparkline } from '../../components/sparkline';
 import { WhyGrouped } from '../../components/why-grouped';
 import { ColorizedHeadline } from '../../components/colorized-headline';
+import { DataQualityNotice } from '../../components/data-quality-notice';
+import { HeartbeatDot } from '../../components/heartbeat-dot';
+import { LowLiquidityTag } from '../../components/low-liquidity-tag';
+import { formatPct } from '../../lib/format';
 
 const KIND_DOT_COLOR: Record<string, string> = {
   structural_break: 'var(--down)',
@@ -14,23 +18,18 @@ const KIND_DOT_COLOR: Record<string, string> = {
   event_resolved: 'var(--up)',
   residual_move: 'var(--unconfirmed)',
 };
-import { classifyFreshness } from '../../../worker/freshness';
+import { classifyFreshness, classifyQuoteQuality } from '../../../worker/freshness';
 import { pollingTierFor } from '../../../worker/polling-tiers';
 import { getWatchlistCounts } from '../../../db/queries/watchlist';
+import { explainWhyQuietForSymbols } from '../../../src/digest/why-quiet';
 
 export const dynamic = 'force-dynamic';
 
-function formatPct(pct: number): string {
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-}
-
-function formatAge(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
+// Below this, a move today would already be discounted by the
+// significance engine's own volume weight (decompose.ts fully suppresses
+// under ~0.37x normal) — flagging at 0.6x gives an earlier, softer
+// warning than "the engine would ignore this entirely."
+const LOW_LIQUIDITY_THRESHOLD = 0.6;
 
 export default async function SymbolDetailPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol: symbolParam } = await params;
@@ -39,18 +38,23 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
   const meta = await getSymbol(symbol);
   if (!meta) notFound();
 
-  const [candles, events, cluster, watchlistCounts] = await Promise.all([
+  const [candles, events, cluster, watchlistCounts, [quietReason]] = await Promise.all([
     getRecentCandles(symbol, 20),
     getRecentEventsForSymbol(symbol, 15),
     getLatestClusterForSymbol(symbol),
     getWatchlistCounts(),
+    explainWhyQuietForSymbols([symbol]),
   ]);
 
   const latest = candles[candles.length - 1];
   const prior = candles[candles.length - 2];
   const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
   const { intervalMs: expectedIntervalMs } = pollingTierFor(watchlistCounts.get(symbol) ?? 0);
-  const freshness = latest ? classifyFreshness(latest.ts, new Date(), expectedIntervalMs) : null;
+  const now = new Date();
+  const freshness = latest ? classifyFreshness(latest.ts, now, expectedIntervalMs) : null;
+  const quality = latest && freshness ? classifyQuoteQuality(freshness, latest.confirmed) : null;
+  const isLowLiquidity =
+    quietReason && quietReason.volumeRatio !== null && quietReason.volumeRatio < LOW_LIQUIDITY_THRESHOLD;
 
   const peers = cluster ? cluster.members.filter((m) => m !== symbol) : [];
   const clusterLabel = cluster
@@ -72,7 +76,10 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div>
-          <h1 style={{ fontSize: 26 }}>{meta.symbol}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            {quality && <HeartbeatDot quality={quality} />}
+            <h1 style={{ fontSize: 26 }}>{meta.symbol}</h1>
+          </div>
           <p style={{ color: 'var(--ink-muted)', fontSize: 14, margin: '4px 0 0' }}>
             {meta.name} · {meta.sector}
           </p>
@@ -94,33 +101,14 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
         )}
       </div>
 
-      {latest && freshness === 'unreachable' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 13,
-            color: 'var(--down)',
-            border: '1px solid var(--down)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '8px 14px',
-            marginBottom: 16,
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--down)', flexShrink: 0 }}
-          />
-          Data provider unreachable — showing last known data from {formatAge(Date.now() - latest.ts.getTime())} ago.
-        </div>
-      )}
+      {latest && quality && <DataQualityNotice quality={quality} asOf={latest.ts} now={now} />}
 
       {latest && (
         <div
           style={{
             display: 'flex',
-            gap: 8,
+            alignItems: 'center',
+            gap: 10,
             fontSize: 11,
             color: 'var(--ink-faint)',
             letterSpacing: '0.02em',
@@ -128,8 +116,7 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
           }}
         >
           <span>as of {latest.session_date}</span>
-          {freshness === 'stale' && <span style={{ color: 'var(--unconfirmed)' }}>· stale</span>}
-          {!latest.confirmed && <span style={{ color: 'var(--unconfirmed)' }}>· unconfirmed</span>}
+          {isLowLiquidity && <LowLiquidityTag volumeRatio={quietReason!.volumeRatio!} />}
         </div>
       )}
 

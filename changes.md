@@ -28,3 +28,21 @@ line on each entry.
 **Items 5, 6, 7 (scoring version, zero-not-fabricated missing evidence, reset-on-source-switch) were already true before this branch** — done in prior main-branch work this session, verified still present: `SignificanceResult.scoringVersion`, `Decomposition.volumeDataMissing` (neutral weight, not `Infinity`), and rolling-window stats recomputed fresh every ingestion cycle (no accumulated state to blend across a `DATA_MODE` switch — see `db/migrations/0005_candle_data_mode.sql`'s comment). Not re-implemented here; noted so the branch history is honest about what's actually new.
 
 **Not yet done from item 1's full scope:** the IA audit still needs to cover Clusters, Playback, System, and the Symbol detail page individually (Digest is the only screen restructured so far).
+
+---
+
+## 2026-09-14 — Items 4, 9, 10, 11: four-state data quality, low-liquidity tag, heartbeat
+
+**What changed.**
+
+- `worker/freshness.ts` gained `classifyQuoteQuality(freshness, confirmed)`, a new pure function (item 9 explicitly calls for this) combining two already-computed, independent facts — `classifyFreshness`'s existing 3-level age classification (already per-symbol-cadence-scaled, not a fixed global timeout — item 11 was already substantially true) and the existing `confirmed` boolean from two-source reconciliation — into one 4-state `QuoteQuality`: `fresh | stale | unavailable | invalid`. `invalid` (reconciliation rejected the print) takes priority over freshness: a fresh-but-disputed number isn't "fresher" than a stale one. 5 new tests in `tests/worker/freshness.test.ts`.
+- `app/components/data-quality-notice.tsx` (item 4): replaces the old generic "· stale" / "· unconfirmed" text badges on the symbol detail page with an actual sentence per state — what's wrong, since when (real age, `app/lib/format.ts`'s `formatAge`), and what it means for trusting the number. Renders nothing for `fresh` — no reassuring banner needed, keeps the default view uncluttered per item 1.
+- `app/components/heartbeat-dot.tsx` (item 11's UI half): a small dot that pulses only when `fresh` — crossing the symbol's own expected refresh interval stops the pulse and changes color, which is itself the signal, not a separate label.
+- `app/components/low-liquidity-tag.tsx` (item 10): its own distinct tag, shown only when today's volume ratio is below 0.6x normal (a UI presentation threshold, chosen with margin above the significance engine's own ~0.37x hard suppression floor in `decompose.ts` — not a scoring parameter, no config/schema change) — separate from the staleness notice above, since thin volume and a stale feed are different facts about a symbol.
+- `app/symbol/[symbol]/page.tsx` now wires all three together, using `getRecentCandles` (existing), `explainWhyQuietForSymbols` (existing — the same read-only decomposition the "Show me anyway" feature already uses, extended here to a single symbol) — no new query, no new route.
+
+**Files:** `worker/freshness.ts`, `tests/worker/freshness.test.ts`, `app/components/data-quality-notice.tsx` (new), `app/components/heartbeat-dot.tsx` (new), `app/components/low-liquidity-tag.tsx` (new), `app/lib/format.ts` (new — `formatPct`/`formatAge` extracted so the watchlist table redesign, item 17, can reuse them), `app/globals.css` (new `heartbeat-ping` keyframe, respects the existing `prefers-reduced-motion` rule), `app/symbol/[symbol]/page.tsx`.
+
+**Backend surfaces touched:** `worker/freshness.ts` gained one new pure function — no existing function's behavior changed, no schema, no route. Verified against real backfilled data: `/symbol/KOTAKBANK` correctly renders "Data provider unreachable for 3d" (the real gap between the committed dataset's last real session, 2026-09-11, and today), and a direct call confirms `explainWhyQuietForSymbols(['TCS'])` returns a real `volumeRatio` (1.18, correctly below the low-liquidity threshold's trigger point) rather than a null/broken value.
+
+**"Stale/unavailable/invalid data must never silently create a cursor advance or a new event" (item 9's explicit requirement) — already true, verified, not newly built:** cursors only ever move on an explicit client `POST /api/cursor/ack`, never from a freshness computation; `worker/ingest.ts` already skips significance evaluation entirely whenever `confirmed` is false (Section 5, pre-existing).
