@@ -24,10 +24,17 @@ import type { SeedCandle, SeedDataset, CorporateActionFixture } from '../src/see
 const YAHOO_TICKER: Record<string, string> = Object.fromEntries(SYMBOLS.map((s) => [s.symbol, `${s.symbol}.NS`]));
 YAHOO_TICKER[INDEX_SYMBOL] = '^NSEI';
 
-const RANGE = '1y';
-// Matches src/seed/generate.ts's TRADING_DAYS — the significance engine and
-// clustering were tuned against a window this size.
-const TARGET_SESSIONS = 130;
+const RANGE = '2y';
+// Deliberately wider than src/seed/generate.ts's TRADING_DAYS (130, the
+// synthetic fallback's window): every tuned significance/clustering
+// window (src/significance/config.ts's largest is betaWindow/
+// residualStdevWindow at 60 sessions) fits comfortably inside either
+// size, since those are trailing windows evaluated at the *end* of the
+// dataset, not the whole-dataset length. The extra sessions here exist
+// so a real corporate action further back (e.g. KOTAKBANK's 5:1 split)
+// falls inside the fetched window instead of the adjustment logic
+// existing in code but never actually triggering against real data.
+const TARGET_SESSIONS = 220;
 const MIN_SESSIONS = 90;
 
 interface YahooQuote {

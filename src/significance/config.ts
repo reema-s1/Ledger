@@ -1,3 +1,13 @@
+/**
+ * Bumped whenever the scoring *formula* changes (a new gate, a changed
+ * weighting, a different volume-confirmation curve) — not for a threshold
+ * retune within the same formula. Stored on every emitted event's payload
+ * so a future formula change can never silently reinterpret an old event
+ * as if today's math had produced it; a stored event's significance number
+ * is only ever comparable to another event carrying the same version.
+ */
+export const SCORING_VERSION = 'v1';
+
 export interface SignificanceConfig {
   /** Trailing sessions used to regress the stock's return on the index. */
   betaWindow: number;

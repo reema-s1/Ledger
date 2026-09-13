@@ -15,6 +15,7 @@
     "sync-symbols": "tsx scripts/sync-symbols.ts",
     "clusters:recompute": "tsx scripts/recompute-clusters.ts",
     "sync-corporate-actions": "tsx scripts/sync-corporate-actions.ts",
+    "backfill": "tsx scripts/backfill.ts",
     "seed-demo-user": "tsx scripts/seed-demo-user.ts",
     "resolve-alerts": "tsx scripts/resolve-alerts.ts",
     "worker": "tsx worker/index.ts",

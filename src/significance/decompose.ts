@@ -63,10 +63,20 @@ export function decompose(input: SignificanceInput, config: SignificanceConfig):
   const todayVolume = volumes[volumes.length - 1]!;
   const histVolumes = lastN(volumes.slice(0, -1), config.volumeMedianWindow);
   const medianVolume = median(histVolumes);
-  const volumeRatio = medianVolume === 0 ? (todayVolume === 0 ? 1 : Infinity) : todayVolume / medianVolume;
+  // No real baseline (empty history, or a genuinely all-zero window) is
+  // missing evidence, not "confirmed normal volume" — the old formula fed
+  // a zero baseline into today/baseline and got Infinity, which is the
+  // opposite of the intended effect: a move the system has no volume
+  // evidence for would silently get the single HIGHEST possible weight
+  // instead of being judged on its residual alone. Missing evidence must
+  // contribute nothing to the score either way, never a reweighted average.
+  const volumeDataMissing = medianVolume === 0;
+  const volumeRatio = volumeDataMissing ? 1 : todayVolume / medianVolume;
   // 1 at "normal" volume (ratio 1, ln=0), grows for high volume, drops to
   // 0 (fully suppressing the score) below roughly e^-1 (~37%) of normal —
   // "a move on no volume is noise" needs a hard floor, not just a discount.
+  // A missing baseline (ratio pinned to 1 above) lands exactly on the
+  // neutral weight of 1, same effect: judged on residual alone.
   const volumeWeight = Math.max(0, 1 + Math.log(volumeRatio));
   const volumeWeightedZ = Math.abs(residualZ) * volumeWeight;
 
@@ -115,6 +125,7 @@ export function decompose(input: SignificanceInput, config: SignificanceConfig):
     residual,
     residualZ,
     volumeRatio,
+    volumeDataMissing,
     volumeWeightedZ,
     correlationToCluster,
     correlationHistoricalMin,

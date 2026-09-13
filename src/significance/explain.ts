@@ -29,10 +29,14 @@ export function buildExplanation(
     );
   }
 
+  const volumeClause = d.volumeDataMissing
+    ? 'not enough volume history to confirm'
+    : `on ${d.volumeRatio.toFixed(1)}x normal volume`;
+
   return (
     `${capitalize(describeMove(d.observedReturn))} while the market was ${describeMove(d.indexReturn)} ` +
     `and ${clusterLabel} was ${describeMove(d.clusterReturn)}. ` +
     `That's ${Math.abs(d.residualZ).toFixed(1)} standard deviations for this stock, ` +
-    `on ${d.volumeRatio.toFixed(1)}x normal volume.`
+    `${volumeClause}.`
   );
 }

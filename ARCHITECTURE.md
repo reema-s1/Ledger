@@ -200,6 +200,38 @@ normal volume, grows for high volume, and hard-floors at 0 below roughly
 37% of normal (`ln(x) < -1`), so a move on thin volume is fully
 suppressed rather than merely discounted.
 
+**A real bug, caught before it could fire on real data**: when a symbol
+has no real volume baseline at all (an empty or all-zero median window —
+e.g. a symbol too newly listed to have 20 sessions of history yet),
+`volumeRatio` used to be computed as `Infinity`, which made
+`volumeWeight` infinite too — any residual move, however small, would
+trivially clear the significance threshold, and the explanation string
+would have printed the literal text "on Infinityx normal volume". Fixed
+by treating a missing baseline as *neutral* (`volumeDataMissing: true`,
+weight = 1, judged on the residual alone) rather than infinite, and
+disclosing the missing evidence honestly in the explanation ("not enough
+volume history to confirm") instead of fabricating a confirmed reading.
+Covered by a dedicated test (`tests/significance/engine.test.ts`) that
+asserts the explanation never contains "Infinity".
+
+**Scoring version.** Every `SignificanceResult` (and every event payload
+persisted from it) carries `scoringVersion` (`config.ts`'s
+`SCORING_VERSION`, currently `'v1'`) — bumped whenever the scoring
+*formula* changes, so a future formula change can never silently
+reinterpret an old, already-persisted event under new math. Cheap
+insurance for an append-only log that's designed to never rewrite its
+own history.
+
+**What these numbers are, honestly.** A residual z-score is computed
+against a stock's own trailing window (`residualStdevWindow`, default 60
+sessions) — it is a relative, self-referential measure ("how unusual is
+this for *this* stock lately"), not a standardized figure like a 20-day
+or 52-week volatility number, and it isn't meant to be compared across
+symbols as if it were one. That matters because symbols aren't polled at
+the same cadence (Section 5's hot/warm/cold tiers) — the score is a
+prioritization heuristic for one watchlist's worth of attention, not a
+normalized cross-market volatility metric.
+
 Structural break: a rolling correlation-to-cluster window compared
 against every prior window of the same length in the available history.
 Flagged when the current correlation falls sharply (`breakCorrelationDrop`)
@@ -369,6 +401,59 @@ conflict date (2026-08-19, `worker/sources.ts`) is written with
 across the backfill, e.g. *"WIPRO spiked 1.0%, gave back all of it
 since."*
 
+**Re-verified against the shipped real-data path** (not just the
+synthetic BAJFINANCE fixture above): with `data/real-nse-history.json`
+present (the default, committed), `HISTORY_DAYS` widened from 130 to 220
+so a real corporate action further back than a bare 130-session window
+still falls inside it, a fresh backfill correctly produces exactly one
+`corporate_action` event for KOTAKBANK's real 5:1 split (2026-01-14) and
+zero price-move events that day — the same guarantee the BAJFINANCE test
+already covered, now also holding against a real vendor-sourced split,
+not only a planted one. `HISTORY_DAYS` has to be kept >= the fetch
+script's own window (`scripts/fetch-real-history.ts`'s `TARGET_SESSIONS`)
+for this to hold — they're two independent slices of "how far back", and
+widening one without the other silently drops the corporate action back
+out of the ingested window despite it being present in the fetched data.
+
+**Data-mode provenance** (`db/migrations/0005_candle_data_mode.sql`):
+every `candles` row now
+records which `DATA_MODE` produced it. This is provenance, not a
+correctness fix — the significance engine's rolling-window statistics
+are recomputed fresh from `sources.primary.getHistory()` every single
+ingestion cycle (no accumulated internal state), so they were never at
+risk of blending replay and live data across a mode switch. What was
+missing without this column was purely auditability: a way to tell, by
+looking at a stored row, whether it came from the synthetic/replay path
+or a real live fetch, the same way `confirmed`/`source` already record
+two-source reconciliation state.
+
+**Ingestion outcomes, surfaced.** `IngestOutcome` (`'no-history'` |
+`'unconfirmed'` | `'corporate-action'` | `'first-session'` |
+`'no-cluster'` | `'insufficient-cluster-history'` | `'evaluated'`) existed
+as a type from the start but was never persisted — the quiet outcomes
+(no cluster yet, insufficient peer history) produced no log line and no
+event, making "the engine looked and found nothing" indistinguishable
+from "the engine never got to look." Migration `0006` adds a one-row-
+per-symbol `ingest_status` mirror, upserted every cycle
+(`db/queries/ingest-status.ts`), surfaced on `/system`'s new "Ingestion
+outcomes" table — the same "verify it on the spot" spirit as "Show me
+anyway" and "Why grouped?" below.
+
+**Event fingerprinting/escalation-aware suppression — considered,
+correctly not built.** A common pattern in tick-by-tick alerting systems
+(e.g. "60 min / +15 points" style dedup) suppresses repeated identical
+alerts firing many times an hour. That failure mode doesn't exist in this
+architecture: the `(symbol, ts, kind)` unique constraint on `events`
+already caps significance evaluation at once per symbol per session (the
+worker's watermark gate means a symbol already ingested for today
+produces zero further evaluate() calls that day regardless of how often
+it's polled), and a symbol's continuing multi-day move is already
+narrated as one episode, not a fresh alert per day, once it's more than a
+day old (Section 6's compaction). Building a suppression layer on top
+would be solving a problem this daily-bar architecture structurally
+doesn't have — the honest response was verifying that, not adding code
+to match a suggestion written for a different cadence of system.
+
 One thing I could not cleanly verify: graceful shutdown
 (`process.on('SIGINT'/'SIGTERM', ...)` in `worker/index.ts`, closing the
 pool before exit) follows the standard, correct Node.js pattern, but
@@ -459,6 +544,16 @@ asks for, two devices racing:
    gone from the response (nothing new since that cursor) while every
    other symbol's cursor is untouched — cursors are genuinely independent
    per (user, symbol).
+
+### Every cursor edge case, checked against the actual schema
+
+| Case | What happens | Why |
+| --- | --- | --- |
+| An event lands after a client already fetched a digest snapshot | The next fetch includes it — nothing was missed | `GET /api/digest` never advances the cursor; only an explicit ack does |
+| The same device acks the same event twice | Second ack is a silent no-op, cursor unchanged | `ackCursor`'s upsert only updates when the new value is *higher* |
+| An old tab acks after a newer ack already landed (out-of-order) | The old tab's lower value is ignored; the higher cursor stands | The guard is `last_event_id < EXCLUDED.last_event_id`, enforced by Postgres, not client-side sequencing |
+| A symbol is removed from the watchlist, then re-added later | Its cursor row is untouched by removal, so re-adding resumes from where it left off — no full backlog dump | `read_cursors` is keyed by `(user_id, symbol)`, independent of `watchlist_items`; `removeFromWatchlist` only deletes the watchlist row |
+| Two different users watch the same symbol | Fully independent — one acking never affects the other | Cursor is per `(user_id, symbol)`, not per symbol |
 
 ### Run it end to end
 
@@ -692,10 +787,20 @@ of taking on faith:
   back to an honest note ("grouped by sector — not enough history yet")
   rather than fabricating correlation numbers when the cluster came from
   the sector fallback instead of real correlation clustering.
+- **Ingestion outcomes** on `/system` (`db/queries/ingest-status.ts`,
+  migration `0006`) — every symbol's most recent ingestion result,
+  including the outcomes that never produce a log line or an event
+  (`no-cluster`, `insufficient-cluster-history`, `unconfirmed`). Makes
+  "nothing happened" (the engine looked and found nothing significant)
+  visibly distinct from "nothing happened *that we could see*" (the
+  engine never got as far as evaluating).
 
-Both were verified against the live app, not just the API — screenshotted
-mid-interaction (button clicked, panel open, real numbers rendered), not
-just curled.
+All three were verified against the live app, not just the API — the
+first two screenshotted mid-interaction (button clicked, panel open,
+real numbers rendered); the ingestion-outcomes table verified by curling
+a running `next dev` server against the real backfilled dataset and
+confirming real, varied outcome labels rendered ("Evaluated", "No history
+yet" for the one ticker Yahoo can't resolve).
 
 ## Deployment
 
@@ -709,6 +814,27 @@ no manual dashboard configuration beyond environment variables.
 `DATA_MODE=replay` on the deployed demo, deliberately — stated in
 `.env.example` — so the URL always shows a living market regardless of
 real NSE hours. That's a design choice for a demo, not an apology.
+
+**The deployment model, named as a constraint, not left implicit.** This
+is one Railway worker instance plus one durable Postgres (Neon). What
+that assumes, and what would actually break it:
+
+- **Durable storage is load-bearing.** Every stateful thing — candles,
+  events, cursors, clusters — lives in Postgres, not in the worker
+  process's memory. An ephemeral filesystem for the *database* itself
+  (not Vercel's read-only one, already handled above) would lose the
+  entire event log on every restart; Neon's persistent volumes are what
+  make the append-only design meaningful in production.
+- **Multiple worker replicas wouldn't corrupt data, but they'd waste
+  vendor calls.** Every write `ingestSymbol` makes is idempotent
+  (`ON CONFLICT` on `(symbol, session_date)` and `(symbol, ts, kind)`
+  unique constraints), so two instances polling the same symbol would
+  just mean Yahoo gets hit twice as often for the same result, not a race
+  that corrupts a candle or double-appends an event. What multiple
+  replicas would *not* do on their own is add capacity: `IntervalRunner`
+  schedules one timer per symbol per process, so two identical replicas
+  poll the identical symbol set — scaling ingestion further needs
+  sharding the symbol list across workers, not just adding copies.
 
 **A real gotcha, fixed before it could bite in production**: Vercel's
 serverless functions have a read-only filesystem outside `/tmp`, but
@@ -751,6 +877,20 @@ after first deploy so it backfills events before anyone opens the app.
 **4. Vercel (app)** — import this repo; it reads `vercel.json` and runs
 `npm run seed && next build` automatically. Set `DATABASE_URL` (the Neon
 **pooled** string this time) and `DATA_MODE=replay`.
+
+### Growth path — what actually changes under real load
+
+Not a roadmap, a map of *which* piece moves first as a specific pressure
+shows up, and why that piece specifically:
+
+| Pressure | What changes | Why that piece |
+| --- | --- | --- |
+| More symbols to poll than one worker can keep up with | Shard the symbol list across multiple worker instances (consistent hashing by symbol) | Every write is already idempotent (see above) — replicas are safe today, they just all poll the same full list; sharding is the only piece missing |
+| Users want push instead of "check the digest" | An SSE/WebSocket layer over the same event log | Cursors already model "what's new since X" — only the transport (poll-on-read vs. push-on-write) changes, not the data model |
+| A second, genuinely independent live vendor becomes available | Wire it into `worker/sources.ts`'s `secondary` | `reconcileQuotes` and the `confirmed` column already exist and are tested against a synthetic disagreement — only the source changes |
+| Real multi-user accounts are needed | Replace the `user_id` query param with real session auth | `users`/`watchlist_items`/`read_cursors` are already keyed by `user_id` — auth replaces *how* that id is established, not the schema |
+| `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design (Section 2's trigger) already makes partitioning straightforward — nothing rewrites old partitions |
+| Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path (Section 4) and cached; the next step is making the *recompute itself* incremental, not moving it |
 
 ### What's not done
 

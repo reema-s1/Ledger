@@ -38,6 +38,14 @@ export interface Decomposition {
   residual: number;
   residualZ: number;
   volumeRatio: number;
+  /**
+   * True when there's no real volume history to compare today's volume
+   * against (an empty or all-zero baseline window) — missing evidence,
+   * not "confirmed normal." When true, volumeRatio/volumeWeightedZ are
+   * neutral fallback values (weight 1, i.e. judged on residual alone),
+   * never inflated or suppressed by data that isn't actually there.
+   */
+  volumeDataMissing: boolean;
   volumeWeightedZ: number;
   correlationToCluster: number;
   correlationHistoricalMin: number;
@@ -53,4 +61,6 @@ export interface SignificanceResult {
   significance: number;
   explanation: string;
   decomposition: Decomposition;
+  /** The scoring formula version that produced this result — see config.ts's SCORING_VERSION. */
+  scoringVersion: string;
 }

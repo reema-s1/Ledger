@@ -81,6 +81,37 @@ describe('significance engine', () => {
     expect(evaluate(input, TEST_CONFIG)).toBeNull();
   });
 
+  it('treats a missing volume baseline as neutral, never as fabricated infinite confirmation', () => {
+    // No real volume history at all (e.g. a symbol too newly tracked to
+    // have a baseline yet) - the old formula divided today's real volume
+    // by a zero baseline and got Infinity, which silently gave the move
+    // the single highest possible weight instead of flagging that there
+    // was no real evidence to weigh at all.
+    const input = buildScenario({
+      days: DAYS,
+      indexReturns: BASE_INDEX_RETURNS,
+      clusterBeta: 1.0,
+      clusterNoiseAmplitude: NOISE_AMP,
+      symbolNoiseAmplitude: NOISE_AMP,
+      todaySymbolReturnOverride: 0.008,
+      historicalVolume: 0,
+      todayVolumeOverride: 500_000,
+    });
+
+    const d = decompose(input, TEST_CONFIG);
+    expect(d.volumeDataMissing).toBe(true);
+    expect(Number.isFinite(d.volumeRatio)).toBe(true);
+    expect(Number.isFinite(d.volumeWeightedZ)).toBe(true);
+    // Neutral weight (1) means judged on the residual alone - neither
+    // inflated nor suppressed by volume evidence that isn't there.
+    expect(d.volumeWeightedZ).toBeCloseTo(Math.abs(d.residualZ), 6);
+
+    const result = evaluate(input, TEST_CONFIG, 'IT');
+    expect(result).not.toBeNull();
+    expect(result!.explanation).toContain('not enough volume history to confirm');
+    expect(result!.explanation).not.toContain('Infinity');
+  });
+
   it('flags a correlation breakdown as a structural break, not a plain residual move', () => {
     const input = buildScenario({
       days: DAYS,

@@ -1,10 +1,14 @@
 /**
  * `npm run sync-corporate-actions`
  *
- * Loads the seed dataset's known corporate-action fixtures (the 1:5
- * BAJFINANCE split) into the `corporate_actions` table. Stands in for
- * what a real feed would push as vendor notifications arrive; for the
- * replay/demo dataset, the actions are already known deterministically.
+ * Loads the seed dataset's known corporate-action fixtures into the
+ * `corporate_actions` table. Stands in for what a real feed would push
+ * as vendor notifications arrive; for the replay/demo dataset, the
+ * actions are already known deterministically. With the committed real
+ * dataset (`data/real-nse-history.json`), this is KOTAKBANK's real 5:1
+ * split (2026-01-14); the synthetic generator's own fixture (a 1:5
+ * BAJFINANCE split) only applies if that file is deleted and `npm run
+ * seed` falls back to generated data.
  */
 
 import { loadOrGenerateDataset } from '../src/seed/dataset';

@@ -75,17 +75,22 @@ barely touch the cost path.
 
 ## Data, honestly
 
-- **Historical candles — real.** ~130 trading sessions per symbol
+- **Historical candles — real.** ~220 trading sessions per symbol
   (40 NSE stocks + NIFTY), pulled once from Yahoo Finance's `.NS`
   endpoint (`npm run fetch-real-history`) and committed as a static
   snapshot — correlation clustering runs on real sector co-movement, not
   planted correlation.
-- **Corporate actions — real, but none in the current window.** The same
-  fetch pulls real split/bonus events where Yahoo has them (it found a
-  real KOTAKBANK split outside the current 130-session range); none of
-  the 40 symbols happened to split within this specific window, so the
-  corporate-action adjustment path is real but untriggered right now,
-  not staged.
+- **Corporate actions — real, and actually triggered.** The same fetch
+  pulls real split/bonus events where Yahoo has them; the window was
+  deliberately widened (past the ~130 sessions a demo strictly needs) to
+  land a real one inside it — KOTAKBANK's real 5:1 split on 2026-01-14.
+  Backfilling against it produces exactly one `corporate_action` event
+  and zero false price-move events that day (verified — see
+  `ARCHITECTURE.md` Section 5), so the adjustment path is exercised
+  against real data, not just unit-tested against a synthetic fixture.
+  Running the retrospective grading job for real afterward
+  (`npm run resolve-alerts`) graded 19 flagged moves: 8 held, 1 partially
+  reverted, 10 reverted.
 - **Live quotes — real, single source.** `DATA_MODE` still defaults to
   `replay` for demo-safety, but setting it to `live` pulls real current
   prices from the same Yahoo Finance endpoint as the historical data
@@ -135,8 +140,52 @@ remains the trusted, certain core; this is a dismissible, sourced,
 clearly-secondary layer on top of a move it already flagged — never a
 new detection mechanism of its own.
 
+## Known limitations, stated plainly
+
+- **Statistics are observation-based, not standardized.** A residual
+  z-score is computed against this stock's own rolling window (default
+  60 sessions), not a textbook "20-day" or "52-week" figure — and since
+  hot/warm/cold symbols poll at different intervals (Section 5), it's a
+  *prioritization* heuristic ("does this deserve attention relative to
+  its own recent history"), not a volatility measure that's safe to
+  compare across symbols.
+- **NSE holidays and early closes aren't modeled** — only the weekly
+  Mon-Fri, 09:15-15:30 IST calendar (`src/lib/time/market-calendar.ts`).
+  A real holiday table is a follow-up, not a hidden gap.
+- **`user_id` as a query param stands in for real session auth** — there's
+  no login, no password, no per-request identity check. Fine for a single
+  seeded demo user; a real deployment needs actual auth before this scales
+  past one person.
+- **The worker is one long-lived process, not a fleet.** Every write it
+  makes is idempotent (unique constraints + `ON CONFLICT`), so running a
+  second instance wouldn't corrupt anything — it would just poll the same
+  vendor twice as often for no benefit. Scaling ingestion further means
+  sharding symbols across workers, not just adding replicas.
+- **No extra event-dedup/escalation layer beyond what the schema already
+  guarantees.** A `(symbol, ts, kind)` unique constraint means at most one
+  significance event per symbol per session, and the digest (Section 6)
+  already narrates a multi-day continuing move as one episode rather than
+  a fresh card per day — so a suppression/escalation layer on top (the
+  kind a tick-by-tick alerting system needs) would be solving a problem
+  this daily-bar architecture doesn't have.
+
+Full growth-path (what changes under real load) and every verified cursor
+edge case are in `ARCHITECTURE.md`'s Deployment and Section 6.
+
+## Out of scope, on purpose
+
+Real session auth/multi-user login, a genuinely independent second live
+vendor (NSE's own site blocks non-browser traffic — confirmed, not just
+assumed), push/websocket delivery (the digest is pull-based by design —
+cursors are what make "what's new" a read-time query instead of a
+push subscription), and horizontal autoscaling of the worker. None of
+these are missing by oversight — each is a deliberate line, and the
+reasoning for each is in `ARCHITECTURE.md`.
+
 Full technical write-up (schema, significance engine, clustering math,
 resilience cases, deployment) is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+129 tests across 16 files (`npx vitest run`) — pure-function unit tests,
+no DB required.
 
 ## Run it locally
 
@@ -145,7 +194,7 @@ npm install && cp .env.example .env
 docker compose up -d db && npm run db:migrate
 npm run seed && npm run sync-symbols && npm run sync-corporate-actions \
   && npm run clusters:recompute && npm run seed-demo-user
-npm run worker    # let it run ~20-30s, then Ctrl+C
+npm run backfill    # deterministic: ingests every seeded session in one pass, no timing guesswork
 npm run dev
 ```
 

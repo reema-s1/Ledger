@@ -3,7 +3,25 @@ import { loadOrGenerateDataset } from '../../src/seed/dataset';
 import { listActiveSymbols } from '../../db/queries/symbols';
 import { getWatchlistCounts } from '../../db/queries/watchlist';
 import { getUnconfirmedCandles, countIngestedSessionDates } from '../../db/queries/candles';
+import { listIngestStatuses } from '../../db/queries/ingest-status';
 import { pollingTierFor, DEFAULT_TIER_THRESHOLDS, type PollingTier } from '../../worker/polling-tiers';
+
+const OUTCOME_LABEL: Record<string, string> = {
+  evaluated: 'Evaluated',
+  'no-history': 'No history yet',
+  unconfirmed: 'Sources disagreed',
+  'corporate-action': 'Corporate action today',
+  'first-session': 'First session (nothing to compare)',
+  'no-cluster': 'No cluster assigned yet',
+  'insufficient-cluster-history': 'Cluster peers lack history',
+};
+
+const OUTCOME_IS_QUIET: Record<string, boolean> = {
+  'no-cluster': true,
+  'insufficient-cluster-history': true,
+  unconfirmed: true,
+  'no-history': true,
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -37,11 +55,12 @@ function SectionLabel({ children }: { children: string }) {
 
 export default async function SystemPage() {
   const mode = getDataMode();
-  const [symbols, watcherCounts, unconfirmed, ingestedDays] = await Promise.all([
+  const [symbols, watcherCounts, unconfirmed, ingestedDays, ingestStatuses] = await Promise.all([
     listActiveSymbols(),
     getWatchlistCounts(),
     getUnconfirmedCandles(),
     countIngestedSessionDates(),
+    listIngestStatuses(),
   ]);
 
   let totalDays: number | null = null;
@@ -164,6 +183,47 @@ export default async function SystemPage() {
               ))}
             </div>
           </>
+        )}
+      </section>
+
+      <section style={{ marginBottom: 40 }}>
+        <SectionLabel>Ingestion outcomes</SectionLabel>
+        <p style={{ fontSize: 12.5, color: 'var(--ink-faint)', margin: '0 0 12px', maxWidth: 560 }}>
+          Every symbol's most recent ingestion cycle result — including the quiet outcomes that never produce a log
+          line or an event, so "nothing happened" (the engine looked and found nothing significant) reads
+          differently from "nothing happened <em>that we could see</em>" (no cluster yet, peers lack history,
+          sources disagreed).
+        </p>
+        {ingestStatuses.length === 0 ? (
+          <p style={{ fontSize: 13.5, color: 'var(--ink-muted)', margin: 0 }}>No ingestion cycle has completed yet.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tabular" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--ink-faint)', fontSize: 11 }}>
+                  <th style={{ fontWeight: 500, padding: '0 12px 8px 0' }}>Symbol</th>
+                  <th style={{ fontWeight: 500, padding: '0 12px 8px 0' }}>Last session</th>
+                  <th style={{ fontWeight: 500, padding: '0 0 8px 0' }}>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ingestStatuses.map((row) => (
+                  <tr key={row.symbol} style={{ borderTop: '1px solid var(--rule)' }}>
+                    <td style={{ padding: '8px 12px 8px 0', fontWeight: 600 }}>{row.symbol}</td>
+                    <td style={{ padding: '8px 12px 8px 0', color: 'var(--ink-muted)' }}>{row.session_date ?? '—'}</td>
+                    <td
+                      style={{
+                        padding: '8px 0',
+                        color: OUTCOME_IS_QUIET[row.outcome] ? 'var(--ink-faint)' : 'var(--ink)',
+                      }}
+                    >
+                      {OUTCOME_LABEL[row.outcome] ?? row.outcome}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

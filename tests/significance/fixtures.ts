@@ -55,6 +55,10 @@ export interface ScenarioOptions {
   todaySymbolReturnOverride?: number;
   /** Volume ratio for today relative to a stable historical baseline. */
   todayVolumeRatio?: number;
+  /** Historical (non-today) volume for every day — defaults to a stable baseline. Set to 0 to simulate no real volume history at all. */
+  historicalVolume?: number;
+  /** Today's absolute volume, independent of any ratio — for scenarios where "ratio to baseline" doesn't make sense (e.g. a zero baseline). */
+  todayVolumeOverride?: number;
   /** Optional per-day symbol-return overrides for the most recent `n` days (decoupling window), keyed by offset from the end (0 = today). */
   recentSymbolReturnOverrides?: Record<number, number>;
 }
@@ -92,10 +96,13 @@ export function buildScenario(opts: ScenarioOptions): SignificanceInput {
   void clusterCloses;
   const symbolCloses = closesFromReturns(1000, symbolReturns);
 
-  const stableVolume = 1_000_000;
+  const stableVolume = opts.historicalVolume ?? 1_000_000;
   const volumes = new Array(days + 1).fill(stableVolume);
   if (opts.todayVolumeRatio !== undefined) {
-    volumes[volumes.length - 1] = Math.round(stableVolume * opts.todayVolumeRatio);
+    volumes[volumes.length - 1] = Math.round((opts.historicalVolume ?? 1_000_000) * opts.todayVolumeRatio);
+  }
+  if (opts.todayVolumeOverride !== undefined) {
+    volumes[volumes.length - 1] = opts.todayVolumeOverride;
   }
 
   return {

@@ -11,6 +11,8 @@ export interface CandleRow {
   v: number;
   confirmed: boolean;
   source: string;
+  /** Which DATA_MODE produced this row — provenance only; the significance engine never reads this (see migration 0005). */
+  data_mode: string;
 }
 
 export interface UpsertCandleInput {
@@ -25,6 +27,8 @@ export interface UpsertCandleInput {
   /** Whether the two-source reconciliation agreed within tolerance. Default true (single-source case). */
   confirmed?: boolean;
   source?: string;
+  /** 'replay' | 'live' — defaults to 'replay' for any caller that doesn't pass it explicitly. */
+  dataMode?: string;
 }
 
 /**
@@ -37,10 +41,10 @@ export interface UpsertCandleInput {
  */
 export async function upsertCandle(input: UpsertCandleInput): Promise<void> {
   await query(
-    `INSERT INTO candles (symbol, session_date, ts, o, h, l, c, v, confirmed, source)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO candles (symbol, session_date, ts, o, h, l, c, v, confirmed, source, data_mode)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (symbol, session_date)
-     DO UPDATE SET ts = $3, o = $4, h = $5, l = $6, c = $7, v = $8, confirmed = $9, source = $10`,
+     DO UPDATE SET ts = $3, o = $4, h = $5, l = $6, c = $7, v = $8, confirmed = $9, source = $10, data_mode = $11`,
     [
       input.symbol,
       input.sessionDate,
@@ -52,6 +56,7 @@ export async function upsertCandle(input: UpsertCandleInput): Promise<void> {
       input.v,
       input.confirmed ?? true,
       input.source ?? 'unknown',
+      input.dataMode ?? 'replay',
     ],
   );
 }

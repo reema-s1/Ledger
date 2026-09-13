@@ -39,12 +39,12 @@ recorded in `schema_migrations`.
 Run these **in order** — each depends on the one before it:
 
 ```bash
-npm run seed                     # generates data/seed-dataset.json (130 trading sessions, ending today)
+npm run seed                     # generates data/seed-dataset.json (~220 real trading sessions)
 npm run sync-symbols              # loads the 40 symbols into the `symbols` table
-npm run sync-corporate-actions    # loads the seeded 1:5 split into `corporate_actions`
+npm run sync-corporate-actions    # loads the real corporate actions found in this window into `corporate_actions`
 npm run clusters:recompute        # computes clusters (needs sync-symbols first)
 npm run seed-demo-user            # creates the demo user + a 12-symbol starter watchlist
-npm run worker                    # backfills 130 sessions of candles + events — let it run ~20-30s, then Ctrl+C
+npm run backfill                  # ingests every seeded session in one deterministic pass (candles + events)
 ```
 
 **Why `npm run seed` first, and why re-run it before a demo**: the seed
@@ -56,13 +56,18 @@ aged into "Earlier" — just re-run the six commands above (takes under a
 minute) and it's fresh again. This is a deliberate design tradeoff,
 explained in the README's Section 1 and Deployment notes.
 
-**Why the worker needs to actually run for ~20-30s**: it's not a seed
-script, it's the real long-lived ingestion process — backfilling 130
-sessions × 40 symbols means running the real significance engine ~5,200
-times, writing every candle and every event that clears the bar. Watch
-the console; when it settles into occasional single-symbol log lines
-(instead of a continuous stream), it's caught up. Ctrl+C is safe at any
-point — it's idempotent, and re-running it later only processes new days.
+**Why a separate `npm run backfill` instead of just running the worker**:
+`npm run worker` is the real long-lived ingestion process — the one that
+actually runs in production, polling each symbol at its watchlist tier's
+interval (5s/30s/300s, Section 5) forever. Waiting for it to visit every
+symbol at least once for a first-time local setup means waiting on the
+slowest (cold) tier's real-world interval. `backfill` calls the exact same
+`ingestSymbol` function once per symbol back-to-back instead, so a fresh
+database is fully caught up (candles + events for every seeded session)
+in one deterministic pass — no timing guesswork, no partial state if you
+Ctrl+C too early. Once you're set up, `npm run worker` is what you'd run
+to keep watching for genuinely new sessions; re-running either command
+later only processes days not already in `candles` (idempotent).
 
 ## 4. Run the app
 
@@ -88,7 +93,34 @@ underlying event data — the digest goes back to showing everything as
 new. To fully regenerate from scratch instead (fresh dates, fresh
 prices), re-run all of step 3.
 
----
+### Scripted, deterministic full reset
+
+For a demo that has to reproduce the same beats every time (a recorded
+walkthrough, a judged run-through), this sequence rebuilds every
+ingestion-derived table from the committed real dataset and re-ingests it
+in one deterministic pass — no waiting on the clock, no "did the worker
+catch up yet":
+
+```bash
+# 1. wipe everything the ingestion pipeline derives (never touches users/watchlist_items)
+docker exec -it $(docker ps -qf name=ledger-db) psql -U ledger -d ledger \
+  -c "TRUNCATE candles, events, event_explanations, ingest_status, corporate_actions RESTART IDENTITY CASCADE;"
+
+# 2. re-load the fixed real corporate action, then re-ingest every session in one pass
+npm run sync-corporate-actions
+npm run backfill
+
+# 3. re-run retrospective grading so the accountability stat line is populated too
+npm run resolve-alerts
+```
+
+There's no separate "inject an event" step because none is needed — the
+committed dataset already has fixed, known events at fixed positions
+(KOTAKBANK's real split, an injected two-source conflict on ICICIBANK,
+see `worker/sources.ts`), so every run of this sequence reproduces the
+exact same corporate-action card, the exact same source-conflict entry on
+`/system`, and the exact same resolved/reverted split in the accountability
+stat line — deterministically, from real market data, not scripted fakes.
 
 ## What to check, screen by screen
 
@@ -119,14 +151,17 @@ Add or remove symbols from the dropdown. Changes are real (hits
 
 The best individual symbols to look at, and why:
 
-- **`/symbol/BAJFINANCE`** — has all three of the hardest resilience
-  cases in one page: a `corporate action` line (*"executed a 1:5 split
-  today"*) with **normal-magnitude moves on either side of it**, not a
-  false -80% scream; and multiple `event resolved` lines (*"dropped 4.4%,
-  gave back all of it since"*).
-- **`/symbol/WIPRO`** — the deliberately-seeded structural-break symbol.
-  Click **Why grouped?** under its cluster to see the real pairwise
-  correlation values behind the grouping (not just the label).
+- **`/symbol/KOTAKBANK`** — has the real corporate-action case: a
+  `corporate action` line (*"executed a 1:5 split today"*, 2026-01-14,
+  a real Yahoo Finance split event) with **normal-magnitude moves on
+  either side of it**, not a false -80% scream. (This replaces the
+  synthetic BAJFINANCE fixture below, which only applies if you delete
+  `data/real-nse-history.json` and fall back to generated data.)
+- **`/symbol/WIPRO`** — click **Why grouped?** under its cluster to see
+  the real pairwise correlation values behind the grouping (not just the
+  label), and often has multiple `event resolved` lines (*"dropped X%,
+  gave back all of it since"*) since it trades in the same cluster as
+  the real move activity above.
 - Any symbol shows a price sparkline, freshness/confirmation markers
   (quiet, not a red banner — Section 5's requirement), and its recent
   event history.
@@ -139,8 +174,9 @@ move drifts further from center and picks up color (amber for a plain
 move, red for a structural break) — literally *"the breaking node
 drifting out"* from the brief. Method line at the top tells you honestly
 whether you're looking at real correlation clustering or the sector
-fallback (depends on how much history is in the DB — 130 seeded sessions
-is enough for real correlation clustering to run).
+fallback (depends on how much history is in the DB — 90+ sessions is
+enough for real correlation clustering to run; the shipped real dataset
+has ~220).
 
 ---
 
@@ -169,9 +205,10 @@ resilience, not the UI. To actually see them:
 npx vitest run
 ```
 
-54 tests across significance (the five required fixtures from the
-brief), clustering, the worker's resilience pieces, and digest
-compaction — all pure-function unit tests, no DB required.
+129 tests across 16 files: significance (the five required fixtures from
+the brief), clustering, the worker's resilience pieces, digest
+compaction, explanation lookup, and the ask-the-log retrieval path — all
+pure-function unit tests, no DB required.
 
 ## Troubleshooting
 
@@ -181,10 +218,11 @@ compaction — all pure-function unit tests, no DB required.
   else on your machine already has 3000. The terminal output tells you
   the actual URL.
 - **Digest looks empty right after setup and "Show me anyway" shows
-  nothing useful** — the worker backfill (step 3's last command) probably
-  didn't finish. Re-run `npm run worker` and let it run longer.
+  nothing useful** — `npm run backfill` (step 3's last command) probably
+  errored partway through, or ran before `npm run seed`. Re-run it; it's
+  idempotent and safe to repeat.
 - **Clusters page says "grouped by sector"** instead of showing real
   correlation clusters — `npm run clusters:recompute` needs 90+ sessions
   of history in the DB to engage real correlation clustering; make sure
-  the worker backfill actually completed (5,200 candles expected: 40
-  symbols × 130 sessions) before recomputing.
+  `npm run backfill` actually completed (~8,800 candles expected: 40
+  symbols × ~220 sessions) before recomputing.

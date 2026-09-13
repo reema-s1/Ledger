@@ -11,10 +11,12 @@ import { NoisyQuoteSource, type DeliberateConflict } from './noisy-quote-source'
  * Picked by position (index 20), not a literal calendar date: the seed
  * dataset's session dates are anchored to "now" at generation time (see
  * src/seed/generate.ts), so a hardcoded date here would silently stop
- * matching anything after the next `npm run seed`. Index 20 stays clear
- * of the other fixtures (the split, both breaks, the volume spike, all at
- * indices <= 15) and far enough from the end of a 130-session dataset to
- * read as a genuine "earlier" event, not today's.
+ * matching anything after the next `npm run seed`. Index 20 is far
+ * enough from the end of the dataset (~220 real sessions, or 130
+ * synthetic ones if the real data file is deleted) to read as a genuine
+ * "earlier" event, not today's — and, with the real dataset, lands well
+ * before KOTAKBANK's real split (index 58 of 220), so the two fixtures
+ * never collide on the same session.
  */
 function buildDemoConflicts(): DeliberateConflict[] {
   const dataset = loadOrGenerateDataset();

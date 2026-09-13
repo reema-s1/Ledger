@@ -21,6 +21,7 @@
  */
 
 import type { Sources } from './sources';
+import { getDataMode } from '../src/lib/data-mode';
 import { adjustBarsForCorporateActions, isExDate, type CorporateAction, type RawBar } from './corporate-actions';
 import { reconcileQuotes, type SourceQuote } from './reconcile';
 import { checkForResolution } from './stale-alerts';
@@ -29,6 +30,7 @@ import { listCorporateActions, type CorporateActionRow } from '../db/queries/cor
 import { upsertCandle, getLatestCandleDate } from '../db/queries/candles';
 import { getLatestClusterForSymbol } from '../db/queries/clusters';
 import { appendEvent, getUnresolvedMoveEvents, hasRecentEventOfKind } from '../db/queries/events';
+import { upsertIngestStatus } from '../db/queries/ingest-status';
 import { evaluate } from '../src/significance/engine';
 import { decompose } from '../src/significance/decompose';
 import { DEFAULT_CONFIG } from '../src/significance/config';
@@ -37,7 +39,15 @@ import type { SignificanceInput } from '../src/significance/types';
 import { INDEX_SYMBOL } from '../src/seed/symbols';
 import type { Candle } from '../src/lib/quotes/types';
 
-const HISTORY_DAYS = 130;
+// Must be >= scripts/fetch-real-history.ts's TARGET_SESSIONS: this is a
+// second, independent slice of "how far back is history" — widening the
+// fetch script's window alone doesn't widen ingestion's, since this
+// constant re-caps `primary.getHistory(symbol, HISTORY_DAYS)` regardless
+// of how much the source actually has. Set to 220 (not 130) so a real
+// corporate action further back (e.g. KOTAKBANK's 5:1 split, ~90 sessions
+// before the dataset's tail) actually falls inside the window ingestion
+// looks at, instead of existing in the fetched data but never being seen.
+const HISTORY_DAYS = 220;
 const RECONCILE_TOLERANCE = 0.01; // 1% — beyond this, two sources count as disagreeing
 // How far back to look before emitting a new reassurance card for a
 // symbol — a multi-day market-wide dip shouldn't produce a near-identical
@@ -111,8 +121,22 @@ async function resolvePriorEvents(symbol: string, currentClose: number, ts: Date
   return resolvedAny;
 }
 
-/** Processes every session date newer than what's already ingested for `symbol`. Returns one result per day processed. */
+/**
+ * Processes every session date newer than what's already ingested for
+ * `symbol`, then records the last result as that symbol's current status
+ * (`ingest_status` — /system's "Ingestion outcomes" table) regardless of
+ * which caller invoked this: the live worker loop and the one-shot
+ * `npm run backfill` script both go through this same function, so
+ * neither can silently produce inconsistent status data.
+ */
 export async function ingestSymbol(symbol: string, sources: Sources): Promise<IngestResult[]> {
+  const results = await ingestSymbolSessions(symbol, sources);
+  const last = results[results.length - 1];
+  if (last) await upsertIngestStatus(last.symbol, last.sessionDate, last.outcome);
+  return results;
+}
+
+async function ingestSymbolSessions(symbol: string, sources: Sources): Promise<IngestResult[]> {
   const { primary, secondary } = sources;
 
   const [primaryHistory, secondaryHistory, actionRows, watermark] = await Promise.all([
@@ -171,6 +195,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
       v: todayRaw.v,
       confirmed: reconciled.confirmed,
       source: 'primary',
+      dataMode: getDataMode(),
     });
 
     if (!reconciled.confirmed) {
@@ -244,6 +269,7 @@ export async function ingestSymbol(symbol: string, sources: Sources): Promise<In
             decomposition: result.decomposition,
             baselineClose: baselineAdjusted.close,
             triggerClose: todayAdjusted.close,
+            scoringVersion: result.scoringVersion,
           },
           significance: result.significance,
           explanation: result.explanation,

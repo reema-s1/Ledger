@@ -1,6 +1,6 @@
 import { decompose } from './decompose';
 import { buildExplanation } from './explain';
-import { DEFAULT_CONFIG, type SignificanceConfig } from './config';
+import { DEFAULT_CONFIG, SCORING_VERSION, type SignificanceConfig } from './config';
 import type { SignificanceInput, SignificanceResult } from './types';
 
 /**
@@ -33,5 +33,5 @@ export function evaluate(
   const sessionDate = input.symbolBars[input.symbolBars.length - 1]!.sessionDate;
   const explanation = buildExplanation(kind, input.symbol, d, clusterLabel);
 
-  return { symbol: input.symbol, sessionDate, kind, significance, explanation, decomposition: d };
+  return { symbol: input.symbol, sessionDate, kind, significance, explanation, decomposition: d, scoringVersion: SCORING_VERSION };
 }
