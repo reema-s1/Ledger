@@ -64,12 +64,20 @@ function KindDot({ kind }: { kind: DigestItemKind }) {
  * "Detailed" is just the existing headline, unchanged. Corporate actions
  * and resolved-only items are already a short factual sentence either
  * way, so the toggle doesn't touch them.
+ *
+ * structural_break and residual_move get their own wording rather than
+ * sharing one template — a break (the cluster correlation itself
+ * changing) is a different, rarer kind of event than an ordinary
+ * larger-than-usual move, and Simple mode collapsing them into an
+ * identical sentence would erase exactly the distinction Detailed mode
+ * (and the BREAK badge) goes out of its way to make.
  */
 function simpleHeadline(kind: DigestItemKind, symbol: string): string | null {
   switch (kind) {
-    case 'residual_move':
     case 'structural_break':
-      return `This is an unusually large move for ${symbol}.`;
+      return `${symbol} is behaving differently from the stocks it usually moves with.`;
+    case 'residual_move':
+      return `This is a larger move than usual for ${symbol}.`;
     case 'resolved':
     case 'corporate_action':
       return null; // always show the original — it's already simple

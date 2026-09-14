@@ -46,7 +46,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               // inline with each page's own heading row — while the outer div
               // stays `sticky` so they're still pinned through scroll.
               <div style={{ position: 'sticky', top: 0, zIndex: 20, height: 0 }}>
-                <div style={{ position: 'absolute', top: 16, right: 24, display: 'flex', gap: 8 }}>
+                {/* top: 40 lines this up with every page's own paddingTop: 40,
+                    so it reads as sitting inline with the page's own heading
+                    row rather than floating in its own separate band above
+                    it (see app/page.tsx's header row, which reserves the
+                    matching space on its right to keep clear of this). */}
+                <div style={{ position: 'absolute', top: 40, right: 24, display: 'flex', gap: 8 }}>
                   <ProductTour playbackEnabled={playbackEnabled} />
                   <NotificationBell triggered={triggered} />
                 </div>

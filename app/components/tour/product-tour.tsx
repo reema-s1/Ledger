@@ -75,6 +75,14 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
         popover: {
           title: s.title,
           description: s.description,
+          // driver.js picks the Next/Done label itself by checking whether
+          // any later step's element is already sitting in the DOM right
+          // now — a fine heuristic for a single-page tour, but every step
+          // on a page we haven't navigated to yet fails that check, so the
+          // last step on *each* page reads "Done" even though nine more
+          // are still ahead. Forcing it from our own (correct) index
+          // overrides that per-step guess.
+          nextBtnText: i === steps.length - 1 ? undefined : 'Next',
           onNextClick: () => goTo(i + 1),
           onPrevClick: () => goTo(i - 1),
         },
@@ -161,11 +169,14 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
         borderRadius: '50%',
         background: 'var(--surface)',
         border: '1px solid var(--rule)',
-        fontSize: 15,
+        color: 'var(--ink)',
         cursor: 'pointer',
       }}
     >
-      🎓
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" />
+        <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+      </svg>
     </button>
   );
 }

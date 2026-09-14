@@ -83,7 +83,11 @@ export default async function DigestPage() {
   return (
     <SimpleDetailProvider>
       <main className="container-digest" style={{ paddingTop: 40, paddingBottom: 80 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, gap: 16 }}>
+        {/* paddingRight clears the tour trigger + notification bell, which sit
+            fixed at the same height in the page's own top-right corner (see
+            app/layout.tsx) — without it, this row's own right-aligned controls
+            would sit directly underneath them. */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, gap: 16, paddingRight: 96 }}>
           <h1 style={{ fontSize: 24 }}>What&rsquo;s new</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <SimpleDetailToggle />
