@@ -8,6 +8,7 @@ import { Sparkline } from './sparkline';
 import { RangeBar } from './range-bar';
 import { HeartbeatDot } from './heartbeat-dot';
 import { PersonalThreshold } from './personal-threshold';
+import { SymbolCombobox } from './symbol-combobox';
 import { UndoToast, type UndoState } from './undo-toast';
 import { formatPct } from '../lib/format';
 import type { WatchlistRow } from '../watchlist/rows';
@@ -52,7 +53,16 @@ function DayChangeCell({ pct, significant }: { pct: number | null; significant: 
 export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; available: WatchlistSymbol[] }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
-  const [toAdd, setToAdd] = useState(available[0]?.symbol ?? '');
+  // No longer defaults to the first available symbol the way the old
+  // `<select>` did: a search box that starts pre-filled with a symbol
+  // nobody chose invites adding the wrong one by reflex, so Add stays
+  // disabled until something is actually picked.
+  const [toAdd, setToAdd] = useState('');
+  // Bumped after a successful add purely to remount the combobox, which
+  // clears the text it's holding — the added symbol has just left
+  // `available`, so leaving its name sitting in the box would describe
+  // an option that no longer exists.
+  const [addKey, setAddKey] = useState(0);
   const [undo, setUndo] = useState<UndoState | null>(null);
 
   async function handleRemove(symbol: string) {
@@ -73,6 +83,8 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
     await mutate('POST', symbol);
     router.refresh();
     setPending(null);
+    setToAdd('');
+    setAddKey((k) => k + 1);
     // Undoing an add deletes the row outright — a freshly-added symbol
     // has no prior baseline (cursor defaults to 0, no threshold set), so
     // there is nothing to restore, only something to remove.
@@ -83,30 +95,10 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
     <div>
       {available.length > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 24, alignItems: 'center' }}>
-          <select
-            value={toAdd}
-            onChange={(e) => setToAdd(e.target.value)}
-            className="tabular"
-            style={{
-              flex: 1,
-              maxWidth: 360,
-              padding: '10px 12px',
-              border: '1px solid var(--rule)',
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--surface)',
-              color: 'var(--ink)',
-              fontSize: 13,
-            }}
-          >
-            {available.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.symbol} — {s.name}
-              </option>
-            ))}
-          </select>
+          <SymbolCombobox key={addKey} options={available} value={toAdd} onChange={setToAdd} />
           <button
             onClick={handleAdd}
-            disabled={pending === toAdd}
+            disabled={!toAdd || pending === toAdd}
             style={{
               padding: '10px 18px',
               border: 'none',
@@ -115,8 +107,8 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
               color: 'var(--accent-contrast)',
               fontWeight: 600,
               fontSize: 13,
-              cursor: pending === toAdd ? 'default' : 'pointer',
-              opacity: pending === toAdd ? 0.5 : 1,
+              cursor: !toAdd || pending === toAdd ? 'default' : 'pointer',
+              opacity: !toAdd || pending === toAdd ? 0.5 : 1,
             }}
           >
             Add

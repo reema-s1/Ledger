@@ -21,7 +21,12 @@ describe('checkFreshness', () => {
 });
 
 describe('classifyFreshness', () => {
-  const asOf = new Date('2026-08-19T10:00:00Z');
+  // Mid-session deliberately: 05:30Z is 11:00 IST on a Wednesday, leaving
+  // 4h30m of open market ahead of it. These cases are about how silence
+  // *during* a session escalates, so they need real open time to elapse —
+  // an asOf pinned to the 15:30 IST close would make every gap below
+  // measure zero open minutes and stay 'live' forever.
+  const asOf = new Date('2026-08-19T05:30:00Z');
   const minutes = (n: number) => new Date(asOf.getTime() + n * 60 * 1000);
 
   it('is live within a few missed polls of a hot-tier (5s) symbol', () => {
@@ -45,6 +50,33 @@ describe('classifyFreshness', () => {
 
   it('sits in stale between the live and unreachable bands', () => {
     expect(classifyFreshness(asOf, minutes(20), 5 * 60 * 1000)).toBe('stale');
+  });
+
+  // The bug this replaced: age was wall-clock, so a Friday close was
+  // "three days silent" by Sunday — hundreds of times any tier's cadence
+  // — and every symbol announced a provider outage every single weekend,
+  // about a feed that was fine and a market that was shut.
+  it('does not age a Friday close over the weekend, when no session has happened', () => {
+    const fridayClose = new Date('2026-09-11T10:00:00Z'); // Fri 15:30 IST
+    const saturday = new Date('2026-09-12T06:30:00Z');
+    const sunday = new Date('2026-09-13T06:30:00Z');
+    expect(classifyFreshness(fridayClose, saturday, 5 * 60 * 1000)).toBe('live');
+    expect(classifyFreshness(fridayClose, sunday, 5 * 60 * 1000)).toBe('live');
+  });
+
+  it('does not age a close overnight either, before the next session opens', () => {
+    const wedClose = new Date('2026-08-19T10:00:00Z'); // Wed 15:30 IST
+    const thursPreOpen = new Date('2026-08-20T03:00:00Z'); // Thu 08:30 IST, pre-market
+    expect(classifyFreshness(wedClose, thursPreOpen, 5 * 60 * 1000)).toBe('live');
+  });
+
+  it('resumes ageing once the next session actually opens', () => {
+    // Same Wednesday close, but now well into Thursday's session — the
+    // market has been open for hours with no new print, which is a real
+    // gap rather than an overnight one.
+    const wedClose = new Date('2026-08-19T10:00:00Z');
+    const thursMidSession = new Date('2026-08-20T06:30:00Z'); // Thu 12:00 IST
+    expect(classifyFreshness(wedClose, thursMidSession, 5 * 60 * 1000)).toBe('unreachable');
   });
 });
 

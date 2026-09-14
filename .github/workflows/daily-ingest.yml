@@ -1,0 +1,77 @@
+# Daily real-data ingestion, replacing the always-on Railway worker.
+#
+# Why a scheduled job instead of the long-lived worker it was designed as:
+# the worker polls every 5s/30s/5min forever, which (a) bills Railway
+# continuously for a process that has nothing to do outside the ~6h15m NSE
+# session, and (b) keeps Neon's compute permanently awake, since its free
+# tier only scales to zero after ~5 minutes with no connections. A process
+# holding a pool open around the clock is precisely what stops that ever
+# happening. This job connects, ingests whatever sessions are newer than
+# the `candles` watermark, and exits - so Neon goes back to sleep and
+# Railway isn't in the picture at all.
+#
+# What this does NOT change: the tiered-polling code, its tests, and the
+# /system page that surfaces each symbol's tier all still exist and still
+# run locally (`npm run worker`). This is a decision about what's worth
+# paying to run continuously in production, not a removal of the feature.
+#
+# ingestSymbol backfills from the candles watermark rather than from
+# "today", so a missed run (or several) self-heals on the next one - there
+# is no catch-up state to manage, and running it twice in a day is a
+# no-op the second time (`ON CONFLICT DO NOTHING`, see db/queries/events).
+
+name: Daily ingest
+
+on:
+  schedule:
+    # 11:30 UTC = 17:00 IST, comfortably after the 15:30 IST close, with
+    # margin for the vendor to finalize the day's candle.
+    - cron: '30 11 * * *'
+  # So a demo can force a refresh on the spot without waiting for the cron.
+  workflow_dispatch:
+
+concurrency:
+  # Two overlapping ingests would both be safe (every write is idempotent)
+  # but would double Neon's wake time for no benefit.
+  group: daily-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Live, not replay: this job's whole purpose is pulling real sessions
+      # that happened since the last run. Replay would just re-read the
+      # committed snapshot and find nothing new.
+      DATA_MODE: live
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ingest new sessions
+        run: npm run backfill
+
+      - name: Grade past alerts
+        # Cheap, and keeps the resolution stats honest as time passes
+        # rather than frozen at whenever it was last run by hand.
+        run: npm run resolve-alerts
+
+      - name: Recompute clusters (Sundays only)
+        # Correlation clustering is O(N^2) over the whole symbol universe
+        # and the groupings only shift on a weekly timescale - running it
+        # daily would burn Neon compute to recompute a near-identical
+        # answer six extra times a week.
+        run: |
+          if [ "$(date -u +%u)" = "7" ]; then
+            npm run clusters:recompute
+          else
+            echo "Not Sunday - skipping cluster recompute."
+          fi

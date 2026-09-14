@@ -72,3 +72,52 @@ export function sessionCloseTs(sessionDate: string): Date {
   const dayStart = new Date(`${sessionDate}T00:00:00.000Z`);
   return new Date(dayStart.getTime() + (MARKET_CLOSE_MIN - IST_OFFSET_MIN) * 60_000);
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Beyond this the answer is "definitively overdue" and the exact figure stops mattering — a bound, not a business rule. */
+const MAX_DAYS_SCANNED = 400;
+
+/**
+ * How many milliseconds the market was actually *open* between two
+ * instants — the honest denominator for "is this quote overdue?"
+ *
+ * Wall-clock elapsed time is the wrong measure: a Friday closing price
+ * looked at on Sunday is three days old and still the single most recent
+ * real price that exists. Judging it against a polling interval says the
+ * feed has been silent for 60x its cadence and flags it unreachable,
+ * which is the system crying wolf about a market that was simply shut.
+ * Counting only open-market time makes an overnight or weekend gap cost
+ * nothing, while a feed that genuinely stops answering *during* a session
+ * still crosses the same thresholds at the same rate it always did.
+ *
+ * Inherits market-calendar's documented holiday simplification: an
+ * unmodelled NSE holiday still counts as open time here, so a quote can
+ * read as overdue on a holiday. That's a smaller, rarer error than the
+ * every-single-weekend one it replaces, and it fails toward "we're not
+ * sure this is current" rather than toward false confidence.
+ */
+export function marketOpenMsBetween(from: Date, to: Date): number {
+  if (to.getTime() <= from.getTime()) return 0;
+
+  let total = 0;
+  let cursor = istDateString(from);
+
+  for (let scanned = 0; scanned <= MAX_DAYS_SCANNED; scanned++) {
+    const open = sessionOpenTs(cursor);
+    const close = sessionCloseTs(cursor);
+    if (open.getTime() > to.getTime()) break;
+
+    if (isWeekday(open)) {
+      const start = Math.max(open.getTime(), from.getTime());
+      const end = Math.min(close.getTime(), to.getTime());
+      if (end > start) total += end - start;
+    }
+
+    if (scanned === MAX_DAYS_SCANNED) return Number.MAX_SAFE_INTEGER;
+    // IST has no DST, so a flat +24h off the session open always lands on
+    // the next calendar day's session open.
+    cursor = istDateString(new Date(open.getTime() + DAY_MS));
+  }
+
+  return total;
+}

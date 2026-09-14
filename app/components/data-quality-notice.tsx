@@ -1,4 +1,5 @@
 import type { QuoteQuality } from '../../worker/freshness';
+import { marketOpenMsBetween } from '../../src/lib/time/market-calendar';
 import { formatAge } from '../lib/format';
 
 /**
@@ -10,11 +11,22 @@ import { formatAge } from '../lib/format';
  */
 export function DataQualityNotice({ quality, asOf, now }: { quality: QuoteQuality; asOf: Date; now: Date }) {
   if (quality === 'fresh') return null;
-  const age = formatAge(now.getTime() - asOf.getTime());
+  // Open-market age, matching what classifyFreshness actually measured to
+  // arrive at this quality — quoting wall-clock age here instead would
+  // read as "3d old" for a Friday close looked at on Monday morning,
+  // which is both alarming and not the number any threshold was judged
+  // against.
+  const age = formatAge(marketOpenMsBetween(asOf, now));
 
   const copy: Record<Exclude<QuoteQuality, 'fresh'>, string> = {
     stale: `Last confirmed price is ${age} old — polling hasn't caught up to this symbol's usual cadence yet. The number is real and was trustworthy when it printed; it just isn't current-to-the-minute.`,
-    unavailable: `Data provider unreachable for ${age} — well past this symbol's expected refresh interval, not just one slow poll. Showing the last known price for reference; treat it as informational until the feed recovers.`,
+    // Deliberately doesn't assert the provider is down, because this can't
+    // tell that apart from an unmodelled NSE holiday or ingestion simply
+    // not having run — all three look identical from here (a session's
+    // worth of open market with no new print). Naming the symptom rather
+    // than guessing at a cause is the honest version; the age shown is
+    // already measured in open-market time, so a weekend never triggers it.
+    unavailable: `No new price through ${age} of open market — well past this symbol's expected refresh interval, not just one slow poll. That usually means the feed has stopped answering, though an unlisted market holiday looks the same from here. Showing the last confirmed price for reference; treat it as informational until it refreshes.`,
     invalid: `The last print didn't survive two-source reconciliation (sources disagreed beyond tolerance) — recorded for the history, but never used to raise an alert. Don't treat this as a trustworthy current price.`,
   };
 
