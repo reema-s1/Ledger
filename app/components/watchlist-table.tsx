@@ -84,7 +84,7 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
       {rows.length === 0 ? (
         <p style={{ color: 'var(--ink-muted)', fontSize: 14, padding: '24px 0' }}>Nothing on your watchlist yet.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto' }} data-tour="watchlist-table">
           <table className="tabular" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--ink-faint)', fontSize: 10.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -98,7 +98,7 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {rows.map((r, i) => (
                 <tr key={r.symbol} style={{ borderTop: '1px solid var(--rule)' }}>
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -119,7 +119,9 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
                         {formatPct(r.sinceCursorPct)} since you left
                       </div>
                     )}
-                    <PersonalThreshold symbol={r.symbol} thresholdPct={r.personalThresholdPct} exceeded={r.thresholdExceeded} />
+                    <span data-tour={i === 0 ? 'personal-threshold' : undefined}>
+                      <PersonalThreshold symbol={r.symbol} thresholdPct={r.personalThresholdPct} exceeded={r.thresholdExceeded} />
+                    </span>
                   </td>
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     {r.latestClose !== null ? `₹${r.latestClose.toFixed(2)}` : '—'}
@@ -127,7 +129,7 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     <DayChangeCell pct={r.dayChangePct} significant={r.daySignificant} />
                   </td>
-                  <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
+                  <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }} data-tour={i === 0 ? 'sparkline' : undefined}>
                     {r.sparklineValues.length >= 2 && (
                       <Sparkline
                         values={r.sparklineValues}

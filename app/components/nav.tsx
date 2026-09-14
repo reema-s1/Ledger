@@ -36,7 +36,7 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
         Ledger
       </Link>
 
-      <nav className="app-nav-links">
+      <nav className="app-nav-links" data-tour="nav-links">
         {links.map((link) => (
           <Link
             key={link.href}

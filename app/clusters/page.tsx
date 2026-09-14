@@ -88,7 +88,7 @@ export default async function ClustersPage() {
 
       <ClusterVisual groups={groups} moved={moved} />
 
-      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 28 }} data-tour="divergence-list">
         {groups.map((g) => {
           const sortedMembers = [...g.members].sort((a, b) => {
             const za = divergenceBySymbol.get(a)?.residualZ;

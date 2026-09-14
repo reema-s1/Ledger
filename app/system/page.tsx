@@ -82,7 +82,7 @@ export default async function SystemPage() {
   const t = DEFAULT_TIER_THRESHOLDS;
 
   return (
-    <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
+    <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }} data-tour="system-page">
       <h1 style={{ fontSize: 24, marginBottom: 8 }}>System</h1>
       <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginTop: 0, marginBottom: 40, maxWidth: 560 }}>
         How this actually runs, not just what the README claims — the real polling policy, every source

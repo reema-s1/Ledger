@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Nav } from './components/nav';
 import { DataModeTag } from './components/data-mode-tag';
 import { NotificationBell } from './components/notification-bell';
+import { ProductTour } from './components/tour/product-tour';
 import { hasSession, getCurrentUserId } from '../src/lib/current-user';
 import { isPlaybackEnabled } from '../src/lib/feature-flags';
 import { getTriggeredThresholds } from '../db/queries/watch-thresholds';
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // failure (a symbol with no candles yet, etc.) rather than surfacing an
   // error for what's a secondary, passive indicator.
   const triggered = showNav ? await getTriggeredThresholds(await getCurrentUserId()).catch(() => []) : [];
+  const playbackEnabled = isPlaybackEnabled();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -32,9 +34,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <div className="app-shell">
-          {showNav && <Nav showPlayback={isPlaybackEnabled()} />}
+          {showNav && <Nav showPlayback={playbackEnabled} />}
           <div className="app-main">
-            {showNav && <NotificationBell triggered={triggered} />}
+            {showNav && (
+              <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '16px 24px 0' }}>
+                <ProductTour playbackEnabled={playbackEnabled} />
+                <NotificationBell triggered={triggered} />
+              </div>
+            )}
             {children}
             <DataModeTag />
           </div>

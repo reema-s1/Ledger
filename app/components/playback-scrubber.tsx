@@ -126,6 +126,7 @@ export function PlaybackScrubber({
           above, never a fabricated "inject event" that didn't happen. */}
       <div
         className="tabular"
+        data-tour="playback-controls"
         style={{
           display: 'flex',
           flexWrap: 'wrap',

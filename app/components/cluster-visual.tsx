@@ -45,7 +45,7 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
   const baseRadius = Math.min(cellW, cellH) * 0.3;
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Cluster groupings">
+    <svg data-tour="cluster-visual" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Cluster groupings">
       {groups.map((group, gi) => {
         const col = gi % columns;
         const row = Math.floor(gi / columns);

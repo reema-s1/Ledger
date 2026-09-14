@@ -63,7 +63,7 @@ export default async function DigestPage() {
             ))}
           </div>
         )}
-        <div style={{ maxWidth: 520, margin: '0 auto', paddingBottom: 60 }}>
+        <div style={{ maxWidth: 520, margin: '0 auto', paddingBottom: 60 }} data-tour="ask-log">
           <ResolutionStatsLine stats={resolutionStats} />
           <AskLog />
         </div>
@@ -92,7 +92,7 @@ export default async function DigestPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }} data-tour="digest-cards">
             {TIER_ORDER.map((tier) => {
               const tierItems = grouped.get(tier)!;
               if (tierItems.length === 0) return null;
@@ -148,7 +148,7 @@ export default async function DigestPage() {
           {/* Sticky so it stays reachable while scrolling past a long card
               list — the reported problem was that it read as buried at the
               bottom, not that it belonged at the bottom. */}
-          <aside style={{ width: 300, flexShrink: 0, position: 'sticky', top: 24 }}>
+          <aside style={{ width: 300, flexShrink: 0, position: 'sticky', top: 24 }} data-tour="ask-log">
             <ResolutionStatsLine stats={resolutionStats} />
             <AskLog />
           </aside>

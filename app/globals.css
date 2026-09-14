@@ -265,6 +265,73 @@ button {
   -moz-appearance: textfield;
 }
 
+/* driver.js theme overrides (app/components/tour/product-tour.tsx) — the
+   library ships a plain light-mode popover by default; these retarget
+   its own class names at this app's real design tokens so it reads as
+   part of the product, not a bolted-on third-party widget, in both
+   themes. Class names are driver.js's own (node_modules/driver.js/dist/
+   driver.css), not ours — this only overrides colors/spacing, never
+   layout/behavior. */
+.driver-popover.ledger-tour-popover {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-width: 320px;
+  padding: 16px;
+}
+.ledger-tour-popover .driver-popover-title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.ledger-tour-popover .driver-popover-description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+.ledger-tour-popover .driver-popover-close-btn {
+  color: var(--ink-faint);
+}
+.ledger-tour-popover .driver-popover-close-btn:hover,
+.ledger-tour-popover .driver-popover-close-btn:focus {
+  color: var(--ink);
+}
+.ledger-tour-popover .driver-popover-progress-text {
+  font-family: var(--font-sans);
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+.ledger-tour-popover .driver-popover-footer-btn {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ledger-tour-popover .driver-popover-footer-btn:hover,
+.ledger-tour-popover .driver-popover-footer-btn:focus {
+  background: var(--accent-soft);
+}
+.ledger-tour-popover .driver-popover-next-btn,
+.ledger-tour-popover .driver-popover-done-btn {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+.driver-popover-arrow {
+  border-color: var(--surface) !important;
+}
+.driver-overlay {
+  fill: #000;
+}
+
 @keyframes heartbeat-ping {
   0% {
     transform: scale(1);

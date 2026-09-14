@@ -15,10 +15,9 @@ import { formatPct } from '../lib/format';
  * popup outside the browser tab, nothing proactive — the card only ever
  * appears because someone clicked the bell themselves.
  *
- * `position: sticky` inside `.app-main` (not `position: fixed` on the
- * viewport) deliberately — that way it naturally sits to the right of
- * the desktop sidebar and below the mobile top bar without any manual
- * breakpoint math to avoid overlapping either.
+ * Positioning is owned by the caller (app/layout.tsx's shared top-right
+ * sticky bar, alongside the tour trigger) — this component only renders
+ * the button and its dropdown, not its own page position.
  */
 export function NotificationBell({ triggered }: { triggered: TriggeredThreshold[] }) {
   const [open, setOpen] = useState(false);
@@ -42,10 +41,10 @@ export function NotificationBell({ triggered }: { triggered: TriggeredThreshold[
   }, [open]);
 
   return (
-    <div ref={containerRef} style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', justifyContent: 'flex-end', padding: '16px 24px 0' }}>
-      <div style={{ position: 'relative' }}>
+    <div ref={containerRef} style={{ position: 'relative' }}>
         <button
           onClick={() => setOpen((o) => !o)}
+          data-tour="notification-bell"
           aria-label={count > 0 ? `${count} personal reminder${count > 1 ? 's' : ''} hit` : 'No personal reminders hit'}
           aria-expanded={open}
           style={{
@@ -141,7 +140,6 @@ export function NotificationBell({ triggered }: { triggered: TriggeredThreshold[
             )}
           </div>
         )}
-      </div>
     </div>
   );
 }
