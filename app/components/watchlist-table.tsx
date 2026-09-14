@@ -181,16 +181,26 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     <DayChangeCell pct={r.dayChangePct} significant={r.daySignificant} />
                   </td>
-                  <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }} data-tour={i === 0 ? 'sparkline' : undefined}>
+                  <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top' }}>
                     {r.sparklineValues.length >= 2 && (
-                      <Sparkline
-                        values={r.sparklineValues}
-                        width={140}
-                        height={36}
-                        eventIndices={r.eventIndices}
-                        cursorIndex={r.cursorIndex ?? undefined}
-                        significantSinceCursor={r.significantSinceCursor}
-                      />
+                      // The tour targets a span around just the chart, not
+                      // the <td> — the cell stretches to fill the table's
+                      // auto-sized column width, well past the 140px chart
+                      // itself, so the tour's highlight box bled out past
+                      // the chart into empty cell padding (visually
+                      // reading as spilling into the next column). A plain
+                      // inline span shrink-wraps to its content's actual
+                      // size instead.
+                      <span data-tour={i === 0 ? 'sparkline' : undefined} style={{ display: 'inline-block' }}>
+                        <Sparkline
+                          values={r.sparklineValues}
+                          width={140}
+                          height={36}
+                          eventIndices={r.eventIndices}
+                          cursorIndex={r.cursorIndex ?? undefined}
+                          significantSinceCursor={r.significantSinceCursor}
+                        />
+                      </span>
                     )}
                   </td>
                   <td style={{ padding: '12px 12px 12px 0', verticalAlign: 'top', color: 'var(--ink-muted)' }}>
