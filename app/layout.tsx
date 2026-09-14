@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Nav } from './components/nav';
 import { DataModeTag } from './components/data-mode-tag';
+import { NotificationBell } from './components/notification-bell';
 import { hasSession, getCurrentUserId } from '../src/lib/current-user';
 import { isPlaybackEnabled } from '../src/lib/feature-flags';
 import { getTriggeredThresholds } from '../db/queries/watch-thresholds';
@@ -31,8 +32,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <div className="app-shell">
-          {showNav && <Nav showPlayback={isPlaybackEnabled()} triggered={triggered} />}
+          {showNav && <Nav showPlayback={isPlaybackEnabled()} />}
           <div className="app-main">
+            {showNav && <NotificationBell triggered={triggered} />}
             {children}
             <DataModeTag />
           </div>
