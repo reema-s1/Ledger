@@ -45,7 +45,7 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
   const baseRadius = Math.min(cellW, cellH) * 0.3;
 
   return (
-    <svg data-tour="cluster-visual" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Cluster groupings">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Cluster groupings">
       {groups.map((group, gi) => {
         const col = gi % columns;
         const row = Math.floor(gi / columns);
@@ -56,6 +56,12 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
         return (
           <g
             key={group.id}
+            // Only the first group is targeted, not the whole SVG — with
+            // enough real clusters this grid runs taller than the
+            // viewport, and driver.js positions its popover relative to
+            // whatever it highlights (see the watchlist table header and
+            // the divergence list's first group for the same fix).
+            data-tour={gi === 0 ? 'cluster-visual' : undefined}
             className="cluster-hover-zoom"
             style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
           >
