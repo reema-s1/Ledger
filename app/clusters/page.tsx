@@ -88,15 +88,18 @@ export default async function ClustersPage() {
 
       <ClusterVisual groups={groups} moved={moved} />
 
-      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 28 }} data-tour="divergence-list">
-        {groups.map((g) => {
+      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 28 }}>
+        {groups.map((g, i) => {
           const sortedMembers = [...g.members].sort((a, b) => {
             const za = divergenceBySymbol.get(a)?.residualZ;
             const zb = divergenceBySymbol.get(b)?.residualZ;
             return Math.abs(zb ?? 0) - Math.abs(za ?? 0);
           });
           return (
-            <div key={g.id}>
+            // The tour targets just the first group, not the whole
+            // (often page-length) list — see the same reasoning on the
+            // watchlist table's header row above.
+            <div key={g.id} data-tour={i === 0 ? 'divergence-list' : undefined}>
               <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 10px' }}>
                 <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{g.label}</span> —{' '}
                 {method === 'sector'

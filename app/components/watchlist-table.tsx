@@ -84,10 +84,19 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
       {rows.length === 0 ? (
         <p style={{ color: 'var(--ink-muted)', fontSize: 14, padding: '24px 0' }}>Nothing on your watchlist yet.</p>
       ) : (
-        <div style={{ overflowX: 'auto' }} data-tour="watchlist-table">
+        <div style={{ overflowX: 'auto' }}>
           <table className="tabular" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
             <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--ink-faint)', fontSize: 10.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              {/* The tour targets just the header row, not the whole
+                  (often much taller than the viewport) table — driver.js
+                  positions its popover relative to whatever it highlights,
+                  and a tall element leaves it nowhere sensible to sit,
+                  forcing an awkward fallback position and an unwanted
+                  auto-scroll to center something too big to fit. */}
+              <tr
+                data-tour="watchlist-table"
+                style={{ textAlign: 'left', color: 'var(--ink-faint)', fontSize: 10.5, letterSpacing: '0.04em', textTransform: 'uppercase' }}
+              >
                 <th style={{ fontWeight: 500, padding: '0 12px 10px 0' }}>Symbol</th>
                 <th style={{ fontWeight: 500, padding: '0 12px 10px 0' }}>Price</th>
                 <th style={{ fontWeight: 500, padding: '0 12px 10px 0' }}>1D</th>
