@@ -37,9 +37,19 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           {showNav && <Nav showPlayback={playbackEnabled} />}
           <div className="app-main">
             {showNav && (
-              <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '16px 24px 0' }}>
-                <ProductTour playbackEnabled={playbackEnabled} />
-                <NotificationBell triggered={triggered} />
+              // height: 0 so this reserves no flow space of its own — with the
+              // old padded row, every page's heading sat visibly lower than it
+              // used to (that row's own height, stacked on top of the page's
+              // own top padding). The icons are pulled back out with `absolute`
+              // on the inner row, positioned at the same offset the old padding
+              // used to give them, so they land in the same top-right spot —
+              // inline with each page's own heading row — while the outer div
+              // stays `sticky` so they're still pinned through scroll.
+              <div style={{ position: 'sticky', top: 0, zIndex: 20, height: 0 }}>
+                <div style={{ position: 'absolute', top: 16, right: 24, display: 'flex', gap: 8 }}>
+                  <ProductTour playbackEnabled={playbackEnabled} />
+                  <NotificationBell triggered={triggered} />
+                </div>
               </div>
             )}
             {children}
