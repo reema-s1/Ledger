@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LedgerMark } from './ledger-mark';
 import { ThemeToggle } from './theme-toggle';
+import type { TriggeredThreshold } from '../../db/queries/watch-thresholds';
 
 const LINKS = [
   { href: '/', label: 'Digest' },
@@ -25,7 +26,14 @@ async function handleLogout() {
   window.location.href = '/';
 }
 
-export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
+export function Nav({
+  showPlayback = false,
+  triggered = [],
+}: {
+  showPlayback?: boolean;
+  /** Personal reminders (item 19) that today's real move actually exceeds — visible from every page, not only /watchlist, since that was a real gap: a triggered reminder was previously invisible unless you happened to visit that one page. Still purely passive — no push, no popup, just a badge on the nav item that leads to the detail. */
+  triggered?: TriggeredThreshold[];
+}) {
   const pathname = usePathname();
   const links = showPlayback ? [...LINKS, PLAYBACK_LINK] : LINKS;
 
@@ -43,8 +51,36 @@ export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
             href={link.href}
             className="nav-link app-nav-link"
             data-active={isActive(pathname, link.href)}
+            style={{ position: 'relative' }}
+            title={
+              link.href === '/watchlist' && triggered.length > 0
+                ? `Reminder${triggered.length > 1 ? 's' : ''} hit: ${triggered.map((t) => t.symbol).join(', ')}`
+                : undefined
+            }
           >
             {link.label}
+            {link.href === '/watchlist' && triggered.length > 0 && (
+              <span
+                aria-label={`${triggered.length} personal reminder${triggered.length > 1 ? 's' : ''} hit`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  marginLeft: 6,
+                  borderRadius: 999,
+                  background: 'var(--accent-blue)',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  verticalAlign: 'middle',
+                }}
+              >
+                🔔{triggered.length}
+              </span>
+            )}
           </Link>
         ))}
       </nav>

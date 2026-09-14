@@ -1,4 +1,5 @@
 import { query } from '../client';
+import { getRecentCandles } from './candles';
 
 export interface WatchThresholdRow {
   user_id: number;
@@ -28,4 +29,35 @@ export async function listWatchThresholds(userId: number): Promise<Map<string, n
     [userId],
   );
   return new Map(rows.map((r) => [r.symbol, Number(r.threshold_pct)]));
+}
+
+export interface TriggeredThreshold {
+  symbol: string;
+  thresholdPct: number;
+  changePct: number;
+}
+
+/**
+ * Which of a user's personal thresholds today's real 1D move actually
+ * exceeds — for the nav bell (app/components/nav.tsx), so a triggered
+ * reminder is visible from every page, not only /watchlist. Deliberately
+ * cheap (2 candles per symbol, not the full sparkline/range/event history
+ * app/watchlist/rows.ts fetches) since this runs on every page load via
+ * the root layout, for however many thresholds a user happens to have —
+ * usually a handful, never the whole watchlist.
+ */
+export async function getTriggeredThresholds(userId: number): Promise<TriggeredThreshold[]> {
+  const thresholds = await listWatchThresholds(userId);
+  if (thresholds.size === 0) return [];
+
+  const results = await Promise.all(
+    [...thresholds.entries()].map(async ([symbol, thresholdPct]): Promise<TriggeredThreshold | null> => {
+      const candles = await getRecentCandles(symbol, 2);
+      if (candles.length < 2) return null;
+      const [prior, latest] = candles;
+      const changePct = ((latest!.c - prior!.c) / prior!.c) * 100;
+      return Math.abs(changePct) >= thresholdPct ? { symbol, thresholdPct, changePct } : null;
+    }),
+  );
+  return results.filter((r): r is TriggeredThreshold => r !== null);
 }
