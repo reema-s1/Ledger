@@ -61,32 +61,39 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
       nextBtnText: 'Next',
       prevBtnText: 'Back',
       onCloseClick: () => finish(),
-      onDoneClick: () => finish(),
       onDestroyed: () => {
         driverRef.current = null;
       },
-      steps: steps.map((s, i) => ({
-        element: s.selector,
-        // 2.5s is generous enough for a client-side route transition plus
-        // a server-rendered page's data fetch to land, without leaving a
-        // real "this element truly isn't here" case waiting too long.
-        waitForElement: 2500,
-        skipMissingElement: true,
-        popover: {
-          title: s.title,
-          description: s.description,
-          // driver.js picks the Next/Done label itself by checking whether
-          // any later step's element is already sitting in the DOM right
-          // now — a fine heuristic for a single-page tour, but every step
-          // on a page we haven't navigated to yet fails that check, so the
-          // last step on *each* page reads "Done" even though nine more
-          // are still ahead. Forcing it from our own (correct) index
-          // overrides that per-step guess.
-          nextBtnText: i === steps.length - 1 ? undefined : 'Next',
-          onNextClick: () => goTo(i + 1),
-          onPrevClick: () => goTo(i - 1),
-        },
-      })),
+      // driver.js decides which handler the Next/Done button actually
+      // *runs* (not just which label it shows) by checking whether any
+      // later step's element is already sitting in the DOM right now — a
+      // fine heuristic on one page, but every step on a page we haven't
+      // navigated to yet fails it, and a global onDoneClick means driver.js
+      // always has a Done handler ready to reach for. So the *click*, not
+      // just the label, silently ran finish() at the last step on each
+      // page: no error, no navigation, the popover just vanished. The fix
+      // is giving onDoneClick to only the true final step's own popover
+      // (never the shared config) — with no global onDoneClick, that
+      // lookup comes up empty everywhere else and the click always falls
+      // through to our own onNextClick, regardless of driver.js's guess.
+      steps: steps.map((s, i) => {
+        const isLast = i === steps.length - 1;
+        return {
+          element: s.selector,
+          // 2.5s is generous enough for a client-side route transition plus
+          // a server-rendered page's data fetch to land, without leaving a
+          // real "this element truly isn't here" case waiting too long.
+          waitForElement: 2500,
+          skipMissingElement: true,
+          popover: {
+            title: s.title,
+            description: s.description,
+            ...(isLast ? { onDoneClick: () => finish() } : { nextBtnText: 'Next' }),
+            onNextClick: () => goTo(i + 1),
+            onPrevClick: () => goTo(i - 1),
+          },
+        };
+      }),
     });
 
     driverRef.current = d;
@@ -100,7 +107,18 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
       finish();
       return;
     }
-    if (step.page !== pathname) {
+    // Read the live URL rather than the `pathname` from this closure's
+    // render: the popover's onNextClick/onPrevClick callbacks are built
+    // once, inside launch(), and never rebuilt as navigation proceeds — so
+    // a captured `pathname` stays frozen at whatever it was when the tour
+    // launched. After the first cross-page jump that stale value no longer
+    // matches reality, so every step from then on incorrectly re-triggers
+    // a (no-op) navigation to a page it's already on, and since the URL
+    // doesn't actually change, the pathname effect that resumes the driver
+    // never fires again — the tour just sits there. window.location.pathname
+    // has no such staleness; it's read fresh on every call.
+    const currentPath = window.location.pathname;
+    if (step.page !== currentPath) {
       pendingRef.current = index > (d.getActiveIndex() ?? 0) ? 'next' : 'prev';
       router.push(step.page);
       return;
