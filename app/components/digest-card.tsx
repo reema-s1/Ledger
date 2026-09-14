@@ -76,7 +76,16 @@ function simpleHeadline(kind: DigestItemKind, symbol: string): string | null {
   }
 }
 
-export function DigestCard({ item, showExplain = false }: { item: DigestItem; showExplain?: boolean }) {
+export function DigestCard({
+  item,
+  showExplain = false,
+  showAck = true,
+}: {
+  item: DigestItem;
+  showExplain?: boolean;
+  /** False in Playback — acking a historical reconstruction makes no sense (it's "not cursor-filtered... independent of what any device has actually acknowledged", per the playback API's own docs). */
+  showAck?: boolean;
+}) {
   const [mode] = useSimpleDetail();
   const [expanded, setExpanded] = useState(false);
   const upToEventId = Math.max(...item.eventIds);
@@ -131,10 +140,12 @@ export function DigestCard({ item, showExplain = false }: { item: DigestItem; sh
               never carry a decomposition — see src/digest/compact.ts). */}
           {item.decomposition && <DecompositionMetrics d={item.decomposition} />}
         </div>
-        <div style={{ flexShrink: 0, paddingTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-          <AckButton symbol={item.symbol} upToEventId={upToEventId} />
-          {canExplain && <ExplainTrigger state={explain.state} onClick={explain.run} />}
-        </div>
+        {(showAck || canExplain) && (
+          <div style={{ flexShrink: 0, paddingTop: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            {showAck && <AckButton symbol={item.symbol} upToEventId={upToEventId} />}
+            {canExplain && <ExplainTrigger state={explain.state} onClick={explain.run} />}
+          </div>
+        )}
       </div>
       {item.decomposition && (
         <>

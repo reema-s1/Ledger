@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { isPlaybackEnabled } from '../../src/lib/feature-flags';
+import { isPlaybackEnabled, isExplanationLookupEnabled } from '../../src/lib/feature-flags';
 import { hasSession, getCurrentUserId } from '../../src/lib/current-user';
 import { listIngestedSessionDates } from '../../db/queries/candles';
 import { listWatchlist } from '../../db/queries/watchlist';
@@ -30,7 +30,7 @@ export default async function PlaybackPage() {
       {sessionDates.length === 0 ? (
         <p style={{ color: 'var(--ink-muted)', fontSize: 14 }}>No ingested sessions yet.</p>
       ) : (
-        <PlaybackScrubber sessionDates={sessionDates} eventDates={eventDates} />
+        <PlaybackScrubber sessionDates={sessionDates} eventDates={eventDates} showExplain={isExplanationLookupEnabled()} />
       )}
     </main>
   );

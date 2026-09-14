@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { DigestItem, DigestTier } from '../../src/digest/types';
+import { DigestCard } from './digest-card';
+import { SimpleDetailProvider } from './simple-detail-context';
+import { SimpleDetailToggle } from './simple-detail-toggle';
 
 interface ClusterRow {
   cluster_id: string;
@@ -31,14 +34,15 @@ const demoButtonStyle = {
   cursor: 'pointer',
 };
 
-const KIND_COLOR: Record<string, string> = {
-  structural_break: 'var(--down)',
-  corporate_action: 'var(--accent-blue)',
-  resolved: 'var(--up)',
-  residual_move: 'var(--unconfirmed)',
-};
-
-export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDates: string[]; eventDates?: string[] }) {
+export function PlaybackScrubber({
+  sessionDates,
+  eventDates = [],
+  showExplain = false,
+}: {
+  sessionDates: string[];
+  eventDates?: string[];
+  showExplain?: boolean;
+}) {
   const [index, setIndex] = useState(sessionDates.length - 1);
   const eventDateSet = new Set(eventDates);
   const nextEventIndex = sessionDates.findIndex((d, i) => i > index && eventDateSet.has(d));
@@ -80,6 +84,7 @@ export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDat
   for (const item of data?.items ?? []) grouped.get(item.tier)!.push(item);
 
   return (
+    <SimpleDetailProvider>
     <div>
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
@@ -144,9 +149,12 @@ export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDat
         >
           Next event →
         </button>
-        <Link href="/" style={{ ...demoButtonStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', marginLeft: 'auto' }}>
+        <Link href="/" style={{ ...demoButtonStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
           Exit to live digest
         </Link>
+        <div style={{ marginLeft: 'auto' }}>
+          <SimpleDetailToggle />
+        </div>
       </div>
 
       {error && <p style={{ fontSize: 13.5, color: 'var(--ink-muted)' }}>{error}</p>}
@@ -203,38 +211,9 @@ export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDat
                 >
                   {TIER_LABEL[tier]}
                 </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div>
                   {tierItems.map((item, i) => (
-                    <div
-                      key={`${item.symbol}-${tier}-${i}`}
-                      style={{
-                        padding: '14px 18px',
-                        background: 'var(--surface)',
-                        border: '1px solid var(--rule)',
-                        borderRadius: 'var(--radius)',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: KIND_COLOR[item.kind] ?? 'var(--ink-faint)',
-                            flexShrink: 0,
-                          }}
-                        />
-                        <Link
-                          href={`/symbol/${item.symbol}`}
-                          className="tabular"
-                          style={{ fontSize: 11, color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 600 }}
-                        >
-                          {item.symbol}
-                        </Link>
-                      </div>
-                      <p style={{ fontSize: 14.5, margin: 0, color: 'var(--ink)' }}>{item.headline}</p>
-                    </div>
+                    <DigestCard key={`${item.symbol}-${tier}-${i}`} item={item} showAck={false} showExplain={showExplain} />
                   ))}
                 </div>
               </section>
@@ -243,5 +222,6 @@ export function PlaybackScrubber({ sessionDates, eventDates = [] }: { sessionDat
         </div>
       )}
     </div>
+    </SimpleDetailProvider>
   );
 }
