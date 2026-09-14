@@ -13,14 +13,23 @@
  * (isAskLogLLMEnabled, feature-flags.ts) and both never the only path to
  * an answer:
  *
- *   - parseQuestionWithLLM: only called when the deterministic regex
- *     parser (parseQuestion) comes up with genuinely nothing — no
- *     symbol, no sentiment, no specific intent — to have a second, more
- *     flexible attempt at understanding phrasing the regex can't cover.
- *     Its symbol pick is always validated against the real watchlist
- *     before being trusted, the same way explanation-lookup.ts validates
- *     an LLM's article pick by index into what was actually fetched,
- *     never by trusting text it generated.
+ *   - parseQuestionWithLLM: called on every question, not only ones the
+ *     deterministic regex parser (parseQuestion) came up empty on — a
+ *     substring match can confidently land on the *wrong* symbol or
+ *     sentiment just as easily as it can miss one entirely, and gating
+ *     on "found nothing" would let exactly that kind of wrong-but-
+ *     confident parse straight through. Only symbol and sentiment are
+ *     ever replaced when the LLM call succeeds — never sinceDays, which
+ *     stays the regex's own explicit keyword/date parsing in every case
+ *     (a free model asked to also guess a day count defaulted to 1 for a
+ *     question with no time phrase at all, where the regex's own default
+ *     of 30 was already correct — date-window parsing isn't a semantic
+ *     judgment call an LLM adds value to). The symbol is always
+ *     validated against the real watchlist before being trusted, the
+ *     same way explanation-lookup.ts validates an LLM's article pick by
+ *     index into what was actually fetched, never by trusting text it
+ *     generated — so a bad model answer can only ever fall back to no
+ *     symbol, never resolve to the wrong one.
  *   - rephraseAnswer: takes the deterministic answer composeAnswer
  *     already built and asks an LLM to restate it more naturally — but
  *     isGrounded verifies every number and every ticker in the rephrased
@@ -214,36 +223,53 @@ export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[],
 }
 
 /**
- * Only reached when parseQuestion above found nothing at all (see
- * askLog) — the prompt lists the real watchlist symbols by name so the
- * model has something concrete to match against, and is told explicitly
- * it may only pick from that list. The response format mirrors
- * explanation-lookup.ts's ANSWER: convention: robust to a reasoning
- * model explaining itself first, parsed from the last such line, never
- * trusted blindly (parseLLMParseResponse re-validates the symbol against
- * the real list a second time, independent of what the prompt asked for).
+ * Called on every question when the flag is on (see askLog) — not just
+ * ones the regex parser struck out on, since a substring match can be
+ * confidently *wrong* as easily as it can be absent. The prompt lists
+ * the real watchlist symbols by name so the model has something concrete
+ * to match against, and is told explicitly it may only pick from that
+ * list. The response format mirrors explanation-lookup.ts's ANSWER:
+ * convention: robust to a reasoning model explaining itself first,
+ * parsed from the last such line, never trusted blindly
+ * (parseLLMParseResponse re-validates the symbol against the real list a
+ * second time, independent of what the prompt asked for).
  */
+export interface LLMParsedQuery {
+  symbol: string | null;
+  sentiment: 'up' | 'down' | null;
+}
+
 export function buildLLMParseMessages(question: string, symbolIndex: SymbolIndexEntry[]): { system: string; user: string } {
   const symbolList = symbolIndex.map((s) => `${s.symbol} (${s.name})`).join(', ');
   const system = [
     'You extract structured search parameters from a question about a stock watchlist.',
     `The only valid symbols are: ${symbolList || '(none on the watchlist)'}. Only ever pick one of these exact tickers, or NONE if the question names no specific stock or asks about the whole watchlist.`,
-    'days: how many days back the question is asking about, as a plain integer. Use 1 for "today", 2 for "yesterday", 7 for "this/last week", 30 for "this/last month" or if genuinely unclear.',
-    'sentiment: "up" if asking specifically about a rise/gain/green move, "down" if asking about a fall/drop/red move, otherwise "none".',
+    'sentiment: "up" only if the question is specifically asking about a price rise/gain/green move, "down" only if specifically asking about a price fall/drop/red move, otherwise "none" — a word like "up" used in an unrelated sense (e.g. "up to date", "what\'s up") is NOT a sentiment.',
     'You may reason briefly first, but your response MUST end with exactly one final line, in plain text with no markdown formatting, in this exact form:',
-    'ANSWER: symbol=<TICKER or NONE> | days=<integer> | sentiment=<up|down|none>',
+    'ANSWER: symbol=<TICKER or NONE> | sentiment=<up|down|none>',
   ].join('\n');
   const user = `Question: ${question}`;
   return { system, user };
 }
 
-/** Never throws; a malformed or missing ANSWER line returns null, same as parseModelResponse in explanation-lookup.ts. */
-export function parseLLMParseResponse(text: string, symbolIndex: SymbolIndexEntry[]): ParsedQuery | null {
+/**
+ * Never throws; a malformed or missing ANSWER line returns null, same as
+ * parseModelResponse in explanation-lookup.ts. Deliberately narrower than
+ * ParsedQuery — no `days` field. A free model asked to also guess a day
+ * count defaulted to 1 for a question with no time phrase at all (should
+ * have been 30, the same default parseQuestion's own explicit keyword/
+ * date parsing already gets right every time) — date-window parsing
+ * isn't a semantic judgment call an LLM adds value to, only symbol and
+ * sentiment interpretation are, so this only ever asks for those, and
+ * askLog always keeps the regex's own sinceDays regardless of whether
+ * this ran.
+ */
+export function parseLLMParseResponse(text: string, symbolIndex: SymbolIndexEntry[]): LLMParsedQuery | null {
   const cleaned = text.replace(/\*/g, '');
   const matches = [...cleaned.matchAll(/ANSWER:\s*(.+)/g)];
   if (matches.length === 0) return null;
   const last = matches[matches.length - 1]![1]!.trim();
-  const m = /^symbol=(\S+)\s*\|\s*days=(\d+)\s*\|\s*sentiment=(up|down|none)/i.exec(last);
+  const m = /^symbol=(\S+)\s*\|\s*sentiment=(up|down|none)/i.exec(last);
   if (!m) return null;
 
   const symbolToken = m[1]!.toUpperCase();
@@ -252,26 +278,23 @@ export function parseLLMParseResponse(text: string, symbolIndex: SymbolIndexEntr
   // actually followed it, the same defensive posture as validating an
   // article INDEX rather than a model-generated URL in explanation-lookup.
   const validSymbol = symbolIndex.find((s) => s.symbol === symbolToken)?.symbol ?? null;
-  const sinceDays = Math.max(1, parseInt(m[2]!, 10));
-  if (!Number.isFinite(sinceDays)) return null;
-  const sentimentToken = m[3]!.toLowerCase();
+  const sentimentToken = m[2]!.toLowerCase();
   const sentiment: 'up' | 'down' | null = sentimentToken === 'up' || sentimentToken === 'down' ? sentimentToken : null;
 
-  let kind: AskLogIntent = 'general';
-  if (sentiment !== null) kind = 'why_red';
-
-  return { symbol: validSymbol, sinceDays, kind, sentiment };
+  return { symbol: validSymbol, sentiment };
 }
 
 /**
- * Only called when the deterministic parser came up with nothing at all
- * (see askLog) — this never replaces parseQuestion, only reinforces it
- * for phrasing the regex genuinely can't cover. Any failure (missing key,
- * network error, malformed reply, symbol that doesn't validate) returns
- * null and the caller falls back to treating the question as unresolved,
- * exactly as it already did before this existed.
+ * Called on every question when the flag is on (see askLog) — not gated
+ * to only phrasing the regex struck out on, since a confident wrong
+ * symbol/sentiment match is the case actually worth catching, not just a
+ * missing one. Its result replaces parseQuestion's symbol and sentiment
+ * (never sinceDays — see parseLLMParseResponse) whenever it succeeds.
+ * Any failure (missing key, network error, malformed reply, symbol that
+ * doesn't validate) returns null and the caller keeps the regex's own
+ * parse entirely, exactly as it already did before this existed.
  */
-export async function parseQuestionWithLLM(question: string, symbolIndex: SymbolIndexEntry[]): Promise<ParsedQuery | null> {
+export async function parseQuestionWithLLM(question: string, symbolIndex: SymbolIndexEntry[]): Promise<LLMParsedQuery | null> {
   try {
     const { system, user } = buildLLMParseMessages(question, symbolIndex);
     const reply = await askOpenRouter(system, user);
@@ -443,15 +466,31 @@ export async function askLog(question: string, userId: number): Promise<AskLogRe
 
   let parsed = parseQuestion(question, symbolIndex);
 
-  // The regex parser found nothing to go on at all — no symbol, no
-  // sentiment, not even a recognized intent phrase. Rather than falling
-  // through to the generic "whole watchlist, no particular angle"
-  // behavior, give an LLM one attempt at phrasing the regex doesn't
-  // cover. Skipped entirely for anything the regex already understood,
-  // so the common case never pays for a network call it doesn't need.
-  if (isAskLogLLMEnabled() && parsed.symbol === null && parsed.kind === 'general' && parsed.sentiment === null) {
+  // Runs on every question, not only when the regex came up empty — a
+  // symbol substring can match the *wrong* thing just as easily as it can
+  // match nothing (a company-name word that collides with an unrelated
+  // one, a sentiment keyword used in a sense that isn't actually a
+  // direction claim — "is TCS up to date with its filings" regex-matches
+  // sentiment=up, wrongly), and gating this on "regex found nothing"
+  // would let exactly that kind of wrong-but-confident parse through
+  // unexamined. Only symbol and sentiment are ever replaced, never
+  // sinceDays — see parseLLMParseResponse for why date-window parsing is
+  // deliberately left to the regex's own explicit keyword/date matching
+  // in every case. The symbol is validated against the real watchlist
+  // inside parseLLMParseResponse regardless, so a bad model answer can
+  // only ever fall back to NONE, never resolve to a wrong symbol. Any
+  // failure in the call itself (missing key, network error, malformed
+  // reply) leaves the regex's own parse completely untouched.
+  if (isAskLogLLMEnabled()) {
     const llmParsed = await parseQuestionWithLLM(question, symbolIndex);
-    if (llmParsed) parsed = llmParsed;
+    if (llmParsed) {
+      parsed = {
+        ...parsed,
+        symbol: llmParsed.symbol,
+        sentiment: llmParsed.sentiment,
+        kind: llmParsed.sentiment !== null ? 'why_red' : 'general',
+      };
+    }
   }
 
   const sinceIso = new Date(Date.now() - parsed.sinceDays * 24 * 60 * 60 * 1000).toISOString();

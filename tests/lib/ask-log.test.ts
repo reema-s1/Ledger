@@ -215,27 +215,33 @@ describe('buildLLMParseMessages', () => {
 });
 
 describe('parseLLMParseResponse', () => {
-  it('parses a valid ANSWER line into a ParsedQuery', () => {
-    const result = parseLLMParseResponse('ANSWER: symbol=WIPRO | days=7 | sentiment=down', SYMBOL_INDEX);
-    expect(result).toEqual({ symbol: 'WIPRO', sinceDays: 7, kind: 'why_red', sentiment: 'down' });
+  it('parses a valid ANSWER line into symbol and sentiment', () => {
+    const result = parseLLMParseResponse('ANSWER: symbol=WIPRO | sentiment=down', SYMBOL_INDEX);
+    expect(result).toEqual({ symbol: 'WIPRO', sentiment: 'down' });
   });
 
-  it('maps symbol=NONE and sentiment=none to null, kind general', () => {
-    const result = parseLLMParseResponse('ANSWER: symbol=NONE | days=30 | sentiment=none', SYMBOL_INDEX);
-    expect(result).toEqual({ symbol: null, sinceDays: 30, kind: 'general', sentiment: null });
+  it('maps symbol=NONE and sentiment=none to null', () => {
+    const result = parseLLMParseResponse('ANSWER: symbol=NONE | sentiment=none', SYMBOL_INDEX);
+    expect(result).toEqual({ symbol: null, sentiment: null });
   });
 
   it('rejects a symbol the model picked that is not actually on the watchlist', () => {
     // The model naming a real ticker that just isn't on THIS watchlist is
     // exactly the case re-validation exists for - never trust the model's
     // word over the real list, even when its answer is well-formed.
-    const result = parseLLMParseResponse('ANSWER: symbol=INFY | days=30 | sentiment=none', SYMBOL_INDEX);
+    const result = parseLLMParseResponse('ANSWER: symbol=INFY | sentiment=none', SYMBOL_INDEX);
     expect(result?.symbol).toBeNull();
   });
 
   it('finds the ANSWER line after reasoning text and strips markdown around it', () => {
-    const verbose = '**ANSWER: symbol=TCS | days=1 | sentiment=up**';
+    const verbose = '**ANSWER: symbol=TCS | sentiment=up**';
     expect(parseLLMParseResponse(verbose, SYMBOL_INDEX)?.symbol).toBe('TCS');
+  });
+
+  it('does not carry a days field at all - date-window parsing always stays the regex\'s own', () => {
+    const result = parseLLMParseResponse('ANSWER: symbol=WIPRO | sentiment=down', SYMBOL_INDEX);
+    expect(result).not.toHaveProperty('sinceDays');
+    expect(result).not.toHaveProperty('kind');
   });
 
   it('returns null (never throws) for a malformed or off-format response', () => {

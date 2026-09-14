@@ -142,11 +142,14 @@ optional layers can assist around that core, both off by default
 (`ENABLE_ASK_LOG_LLM=1`, needs the same `OPENROUTER_API_KEY`), and
 neither is ever the only path to an answer:
 
-- If the deterministic parser finds genuinely nothing in a question — no
-  symbol, no sentiment, no recognized intent — an LLM gets one attempt
-  at phrasing the regex can't cover, constrained to only pick a symbol
-  that's actually on the watchlist (re-validated after the fact, never
-  trusted on the model's word alone).
+- Every question, not only ones the deterministic regex parser came up
+  empty on, also gets parsed by an LLM — a substring match can land
+  confidently on the *wrong* symbol or sentiment just as easily as it
+  can miss one, so the LLM's read fully replaces the regex's whenever it
+  succeeds, constrained to only pick a symbol that's actually on the
+  watchlist (re-validated after the fact, never trusted on the model's
+  word alone — a bad answer can only fall back to no symbol, never the
+  wrong one).
 - The deterministic answer can optionally be rephrased into more natural
   prose. Before that rephrase is ever shown, `isGrounded` (src/lib/
   ask-log.ts) checks that every number and every stock symbol in it
