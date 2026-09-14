@@ -300,7 +300,13 @@ export async function parseQuestionWithLLM(question: string, symbolIndex: Symbol
     const { system, user } = buildLLMParseMessages(question, symbolIndex);
     const reply = await askOpenRouter(system, user);
     return parseLLMParseResponse(reply, symbolIndex);
-  } catch {
+  } catch (err) {
+    // Silent to the user (the regex's own parse is a complete fallback on
+    // its own), but never silent in the logs — a rate limit, an expired
+    // key, or a context-length rejection all throw here, and without this
+    // there'd be no way to tell "the LLM layer is failing" apart from
+    // "every question happens to already be well-parsed by the regex."
+    console.error('[ask-log] LLM question parse failed:', err);
     return null;
   }
 }
@@ -474,7 +480,12 @@ export async function rephraseAnswer(question: string, answer: string): Promise<
     const rephrased = parseRephraseResponse(reply);
     if (rephrased && isGrounded(answer, rephrased)) return rephrased;
     return answer;
-  } catch {
+  } catch (err) {
+    // Same reasoning as parseQuestionWithLLM's catch: the original answer
+    // is a complete, safe fallback on its own, but a rate limit or context-
+    // length rejection here should still show up somewhere a developer
+    // would actually look, not vanish silently.
+    console.error('[ask-log] LLM answer rephrase failed:', err);
     return answer;
   }
 }
