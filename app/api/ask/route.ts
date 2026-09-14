@@ -2,10 +2,15 @@
  * POST /api/ask
  * body: { question: string }
  *
- * Retrieval against the real `events` table (src/lib/ask-log.ts) — no
- * LLM call, no hallucination risk, every sentence in the answer is an
- * explanation string the significance engine already generated. Gated
- * by the same user_id cookie as everything else (src/lib/current-user.ts).
+ * Retrieval against the real `events` table (src/lib/ask-log.ts) — the
+ * answer is always assembled from `explanation` strings the significance
+ * engine already generated, never newly written by an LLM. Two optional,
+ * off-by-default layers (ENABLE_ASK_LOG_LLM, see feature-flags.ts) can
+ * assist without changing that: one gives a second attempt at parsing a
+ * question the deterministic parser found nothing in, the other
+ * rephrases the deterministic answer into more natural prose, verified
+ * against the original before it's ever shown. Gated by the same
+ * user_id cookie as everything else (src/lib/current-user.ts).
  */
 
 import { NextResponse, type NextRequest } from 'next/server';

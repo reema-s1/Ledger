@@ -119,26 +119,46 @@ is already fully explainable — an LLM would make it opaque and
 non-deterministic for no benefit) and for price prediction (no free,
 validated model exists for NSE-specific forecasting, and an unvalidated
 prediction undermines the one thing this product is actually trying to
-be trustworthy about). Ask the log stays retrieval-only for the same
-reason — no LLM, no hallucination risk, every word traceable to a real
-event.
+be trustworthy about).
 
-The one place an LLM is used: **"Find possible explanation,"** an
-on-demand button on a flagged move's card (off by default —
-`ENABLE_EXPLANATION_LOOKUP=1`). Clicking it searches real, dated news for
-that symbol (Google News RSS, no API key), and — only if something
-plausibly relevant turns up — asks an LLM (OpenRouter, a free-tier model)
-to summarize *only* what those articles say, under a strict instruction
-never to add outside knowledge or speculate beyond them. If nothing
-relevant is found, the LLM is never even called. The result is stored
-separately from the event's real explanation (its own table, never
-touching `events`), and is always shown as a visually secondary,
-explicitly labeled **"Possible explanation (unverified)"** block with a
-source link — never styled or worded to look as certain as the
-deterministic significance math above it. The significance engine
-remains the trusted, certain core; this is a dismissible, sourced,
-clearly-secondary layer on top of a move it already flagged — never a
-new detection mechanism of its own.
+**"Find possible explanation,"** an on-demand button on a flagged move's
+card (off by default — `ENABLE_EXPLANATION_LOOKUP=1`). Clicking it
+searches real, dated news for that symbol (Google News RSS, no API key),
+and — only if something plausibly relevant turns up — asks an LLM
+(OpenRouter, a free-tier model) to summarize *only* what those articles
+say, under a strict instruction never to add outside knowledge or
+speculate beyond them. If nothing relevant is found, the LLM is never
+even called. The result is stored separately from the event's real
+explanation (its own table, never touching `events`), and is always
+shown as a visually secondary, explicitly labeled **"Possible
+explanation (unverified)"** block with a source link — never styled or
+worded to look as certain as the deterministic significance math above
+it.
+
+**Ask the log** stays retrieval-only for its actual answer — every
+sentence is still an `explanation` string the significance engine
+already generated, never newly written text, exactly as before. Two
+optional layers can assist around that core, both off by default
+(`ENABLE_ASK_LOG_LLM=1`, needs the same `OPENROUTER_API_KEY`), and
+neither is ever the only path to an answer:
+
+- If the deterministic parser finds genuinely nothing in a question — no
+  symbol, no sentiment, no recognized intent — an LLM gets one attempt
+  at phrasing the regex can't cover, constrained to only pick a symbol
+  that's actually on the watchlist (re-validated after the fact, never
+  trusted on the model's word alone).
+- The deterministic answer can optionally be rephrased into more natural
+  prose. Before that rephrase is ever shown, `isGrounded` (src/lib/
+  ask-log.ts) checks that every number and every stock symbol in it
+  already appeared in the original, unrephrased answer — a rephrase is
+  free to reorder or simplify, never to introduce a number or symbol
+  that wasn't already there. Anything that fails this check, or any
+  failure in the call itself, silently falls back to the original text.
+
+In both features the significance engine remains the trusted, certain
+core; an LLM is only ever a dismissible, verified, clearly-secondary
+layer on top of something already computed deterministically — never a
+new source of facts of its own.
 
 ## Known limitations, stated plainly
 

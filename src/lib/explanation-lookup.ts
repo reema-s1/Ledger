@@ -4,9 +4,9 @@
  * payment method needed on either account:
  *
  *   1. Google News RSS (no API key) for real articles near the event date.
- *   2. OpenRouter's `openrouter/free` model router (no paid search plugin)
- *      judges/summarizes ONLY those articles, under a strict instruction
- *      never to add outside knowledge or speculate beyond them.
+ *   2. A free model via OpenRouter (src/lib/openrouter.ts) judges/
+ *      summarizes ONLY those articles, under a strict instruction never
+ *      to add outside knowledge or speculate beyond them.
  *
  * If step 1 finds nothing plausibly relevant, step 2 never runs at all —
  * never force a speculative answer when there's nothing to ground it in.
@@ -17,18 +17,8 @@
  * the model's own output text.
  */
 
-// `openrouter/free` is a *router* across whatever free models are
-// currently available, verified (3 real calls, same input) to silently
-// switch models between calls and land on wildly unsuited ones — a code-
-// completion model among them — with directly contradictory answers on
-// identical input. A named model is a genuinely free choice too, just
-// without that per-call model-lottery risk. Picked after comparing several
-// real free models on the same input: this one correctly distinguished
-// similarly-named-but-different companies (e.g. "Bajaj Finance" vs "Bajaj
-// Housing Finance") that other candidates conflated - the exact judgment
-// call this feature's safety depends on.
-const OPENROUTER_MODEL = 'inclusionai/ling-3.0-flash-fin:free';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+import { askOpenRouter } from './openrouter';
+
 const GOOGLE_NEWS_RSS_URL = 'https://news.google.com/rss/search';
 // Real "why did X happen" coverage typically lags a move by a day or two
 // (reporting/analysis takes time) rather than preceding it — a narrow
@@ -188,32 +178,6 @@ async function fetchNewsItems(companyName: string, eventDate: Date): Promise<New
   if (!res.ok) throw new Error(`Google News RSS HTTP ${res.status}`);
   const xml = await res.text();
   return filterByDateWindow(parseGoogleNewsRss(xml), eventDate);
-}
-
-async function askOpenRouter(system: string, user: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not set');
-
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      temperature: 0,
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${await res.text()}`);
-  const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenRouter: empty response');
-  return content;
 }
 
 /** The real entry point. `companyName` and `eventDate` are the caller's job to look up (see app/api). */

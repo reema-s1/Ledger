@@ -1,16 +1,44 @@
 /**
- * "Ask the log" — retrieval against the real `events` table, never an
- * LLM call. `parseQuestion` and `composeAnswer` are pure (no I/O,
- * directly testable); `askLog` is the thin impure orchestrator the API
- * route calls, wiring them to the real watchlist/events queries. Kept in
- * one file, one route, one component (see app/api/ask/route.ts,
- * app/components/ask-log.tsx) so the whole feature can be cut cleanly if
- * it destabilizes anything else this late.
+ * "Ask the log" — retrieval against the real `events` table. The answer
+ * itself is never LLM-written: `composeAnswer` only ever selects and
+ * stitches together `explanation` strings the significance engine already
+ * generated, exactly as before. `parseQuestion` and `composeAnswer` are
+ * pure (no I/O, directly testable); `askLog` is the thin impure
+ * orchestrator the API route calls, wiring them to the real watchlist/
+ * events queries. Kept in one file, one route, one component (see
+ * app/api/ask/route.ts, app/components/ask-log.tsx) so the whole feature
+ * can be cut cleanly if it destabilizes anything else this late.
+ *
+ * Two optional LLM-assisted layers, both off unless ENABLE_ASK_LOG_LLM=1
+ * (isAskLogLLMEnabled, feature-flags.ts) and both never the only path to
+ * an answer:
+ *
+ *   - parseQuestionWithLLM: only called when the deterministic regex
+ *     parser (parseQuestion) comes up with genuinely nothing — no
+ *     symbol, no sentiment, no specific intent — to have a second, more
+ *     flexible attempt at understanding phrasing the regex can't cover.
+ *     Its symbol pick is always validated against the real watchlist
+ *     before being trusted, the same way explanation-lookup.ts validates
+ *     an LLM's article pick by index into what was actually fetched,
+ *     never by trusting text it generated.
+ *   - rephraseAnswer: takes the deterministic answer composeAnswer
+ *     already built and asks an LLM to restate it more naturally — but
+ *     isGrounded verifies every number and every ticker in the rephrased
+ *     text already appeared in the original before it's ever shown; any
+ *     mismatch (a number or symbol the rephrase introduced) discards the
+ *     rephrase and falls back to the original, unaltered.
+ *
+ * Either layer's own failure (missing API key, network error, malformed
+ * reply, a rephrase that doesn't verify) silently falls back to the
+ * deterministic result — Ask the log never depends on OpenRouter being
+ * up, it only ever benefits from it.
  */
 
 import { listWatchlist } from '../../db/queries/watchlist';
 import { listActiveSymbols } from '../../db/queries/symbols';
 import { getEventsForSymbolSince, getEventsForSymbolsSince } from '../../db/queries/events';
+import { askOpenRouter } from './openrouter';
+import { isAskLogLLMEnabled } from './feature-flags';
 
 export interface SymbolIndexEntry {
   symbol: string;
@@ -185,6 +213,74 @@ export function parseQuestion(question: string, symbolIndex: SymbolIndexEntry[],
   return { symbol, sinceDays, kind, sentiment };
 }
 
+/**
+ * Only reached when parseQuestion above found nothing at all (see
+ * askLog) — the prompt lists the real watchlist symbols by name so the
+ * model has something concrete to match against, and is told explicitly
+ * it may only pick from that list. The response format mirrors
+ * explanation-lookup.ts's ANSWER: convention: robust to a reasoning
+ * model explaining itself first, parsed from the last such line, never
+ * trusted blindly (parseLLMParseResponse re-validates the symbol against
+ * the real list a second time, independent of what the prompt asked for).
+ */
+export function buildLLMParseMessages(question: string, symbolIndex: SymbolIndexEntry[]): { system: string; user: string } {
+  const symbolList = symbolIndex.map((s) => `${s.symbol} (${s.name})`).join(', ');
+  const system = [
+    'You extract structured search parameters from a question about a stock watchlist.',
+    `The only valid symbols are: ${symbolList || '(none on the watchlist)'}. Only ever pick one of these exact tickers, or NONE if the question names no specific stock or asks about the whole watchlist.`,
+    'days: how many days back the question is asking about, as a plain integer. Use 1 for "today", 2 for "yesterday", 7 for "this/last week", 30 for "this/last month" or if genuinely unclear.',
+    'sentiment: "up" if asking specifically about a rise/gain/green move, "down" if asking about a fall/drop/red move, otherwise "none".',
+    'You may reason briefly first, but your response MUST end with exactly one final line, in plain text with no markdown formatting, in this exact form:',
+    'ANSWER: symbol=<TICKER or NONE> | days=<integer> | sentiment=<up|down|none>',
+  ].join('\n');
+  const user = `Question: ${question}`;
+  return { system, user };
+}
+
+/** Never throws; a malformed or missing ANSWER line returns null, same as parseModelResponse in explanation-lookup.ts. */
+export function parseLLMParseResponse(text: string, symbolIndex: SymbolIndexEntry[]): ParsedQuery | null {
+  const cleaned = text.replace(/\*/g, '');
+  const matches = [...cleaned.matchAll(/ANSWER:\s*(.+)/g)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1]![1]!.trim();
+  const m = /^symbol=(\S+)\s*\|\s*days=(\d+)\s*\|\s*sentiment=(up|down|none)/i.exec(last);
+  if (!m) return null;
+
+  const symbolToken = m[1]!.toUpperCase();
+  // Re-validated against the real watchlist here, independent of the
+  // prompt's own instruction — the model is never trusted to have
+  // actually followed it, the same defensive posture as validating an
+  // article INDEX rather than a model-generated URL in explanation-lookup.
+  const validSymbol = symbolIndex.find((s) => s.symbol === symbolToken)?.symbol ?? null;
+  const sinceDays = Math.max(1, parseInt(m[2]!, 10));
+  if (!Number.isFinite(sinceDays)) return null;
+  const sentimentToken = m[3]!.toLowerCase();
+  const sentiment: 'up' | 'down' | null = sentimentToken === 'up' || sentimentToken === 'down' ? sentimentToken : null;
+
+  let kind: AskLogIntent = 'general';
+  if (sentiment !== null) kind = 'why_red';
+
+  return { symbol: validSymbol, sinceDays, kind, sentiment };
+}
+
+/**
+ * Only called when the deterministic parser came up with nothing at all
+ * (see askLog) — this never replaces parseQuestion, only reinforces it
+ * for phrasing the regex genuinely can't cover. Any failure (missing key,
+ * network error, malformed reply, symbol that doesn't validate) returns
+ * null and the caller falls back to treating the question as unresolved,
+ * exactly as it already did before this existed.
+ */
+export async function parseQuestionWithLLM(question: string, symbolIndex: SymbolIndexEntry[]): Promise<ParsedQuery | null> {
+  try {
+    const { system, user } = buildLLMParseMessages(question, symbolIndex);
+    const reply = await askOpenRouter(system, user);
+    return parseLLMParseResponse(reply, symbolIndex);
+  } catch {
+    return null;
+  }
+}
+
 /** Reads the direction an explanation string already states — the same "subject's own move" pattern ColorizedHeadline colors. */
 function extractDirection(explanation: string | null): 'up' | 'down' | null {
   if (!explanation) return null;
@@ -243,6 +339,90 @@ export function composeAnswer(parsed: ParsedQuery, events: AskLogEvent[]): AskLo
   return { answer, events: candidates.slice(0, ANSWER_EVENT_CAP) };
 }
 
+/** Every decimal or whole number in the text, as strings (so "2.80" and "2.8" are distinct — the rephrase must reuse the original's own formatting, not just an equivalent value). */
+export function extractNumbers(text: string): string[] {
+  return text.match(/\d+(?:\.\d+)?/g) ?? [];
+}
+
+/**
+ * Plausible tickers: an "X&Y" pair (checked first — real NSE tickers like
+ * "M&M"/"L&T" join two single letters this way, which a bare {2,} run
+ * would miss on either side) or a standalone run of 2+ uppercase letters.
+ * Deliberately loose — every explanation string here comes from a fixed,
+ * machine-generated template (explain.ts/structured-explanation.ts),
+ * never free-form prose, so stray capitalized common words aren't a real
+ * risk; a false positive would only make verification stricter, never
+ * looser.
+ */
+export function extractTickers(text: string): string[] {
+  return text.match(/\b[A-Z]+&[A-Z]+\b|\b[A-Z]{2,}\b/g) ?? [];
+}
+
+/**
+ * The actual safety net on the rephrase step: every number and every
+ * plausible ticker the rephrased text contains must already appear
+ * somewhere in the original, deterministic answer. A rephrase is free to
+ * drop details, reorder, or change the sentence structure — it is never
+ * free to introduce a number or a symbol that wasn't already there,
+ * which is the one failure mode that actually matters for a financial
+ * answer (wrong prose reads badly; a wrong number is actively harmful).
+ */
+export function isGrounded(original: string, rephrased: string): boolean {
+  const originalNumbers = new Set(extractNumbers(original));
+  const originalTickers = new Set(extractTickers(original));
+  return (
+    extractNumbers(rephrased).every((n) => originalNumbers.has(n)) &&
+    extractTickers(rephrased).every((t) => originalTickers.has(t))
+  );
+}
+
+/**
+ * The rephrase prompt gets the original question too, not just the
+ * answer — phrasing a reply to actually address what was asked ("why is
+ * it red" vs. "what happened to X") reads more naturally than a context-
+ * free restatement, even though the *facts* available to draw from are
+ * identical either way.
+ */
+export function buildRephraseMessages(question: string, answer: string): { system: string; user: string } {
+  const system = [
+    'You rephrase a factual answer about stock price moves into clearer, more natural prose.',
+    'You may ONLY use facts, numbers, dates, and stock symbols that already appear in the provided answer. Never add, infer, estimate, or round a number that is not already there, and never mention a stock not already named in the answer.',
+    'If the answer is already clear, you may repeat it with only light changes. Do not add commentary, opinions, or anything not directly stated in the answer.',
+    'You may reason briefly first, but your response MUST end with exactly one final line, in plain text with no markdown formatting, in this exact form:',
+    'REPHRASED: <the rephrased answer, one paragraph>',
+  ].join('\n');
+  const user = `Question: ${question}\n\nAnswer: ${answer}`;
+  return { system, user };
+}
+
+/** Never throws; a malformed or missing REPHRASED line returns null. */
+export function parseRephraseResponse(text: string): string | null {
+  const cleaned = text.replace(/\*/g, '');
+  const matches = [...cleaned.matchAll(/REPHRASED:\s*(.+)/g)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1]![1]!.trim();
+  return last.length > 0 ? last : null;
+}
+
+/**
+ * Optional, additive, never a source of new facts: on any failure
+ * (missing key, network error, malformed reply) or if isGrounded rejects
+ * the result, silently returns the original answer unchanged. The
+ * caller never needs its own fallback branch — this function's contract
+ * is "always returns something safe to show."
+ */
+export async function rephraseAnswer(question: string, answer: string): Promise<string> {
+  try {
+    const { system, user } = buildRephraseMessages(question, answer);
+    const reply = await askOpenRouter(system, user);
+    const rephrased = parseRephraseResponse(reply);
+    if (rephrased && isGrounded(answer, rephrased)) return rephrased;
+    return answer;
+  } catch {
+    return answer;
+  }
+}
+
 function toAskLogEvent(e: { id: number; symbol: string; kind: string; ts: Date; explanation: string | null; significance: number | null }): AskLogEvent {
   return { id: e.id, symbol: e.symbol, kind: e.kind, ts: e.ts.toISOString(), explanation: e.explanation, significance: e.significance };
 }
@@ -261,12 +441,34 @@ export async function askLog(question: string, userId: number): Promise<AskLogRe
     .filter((s) => watchlistSet.has(s.symbol))
     .map((s) => ({ symbol: s.symbol, name: s.name }));
 
-  const parsed = parseQuestion(question, symbolIndex);
+  let parsed = parseQuestion(question, symbolIndex);
+
+  // The regex parser found nothing to go on at all — no symbol, no
+  // sentiment, not even a recognized intent phrase. Rather than falling
+  // through to the generic "whole watchlist, no particular angle"
+  // behavior, give an LLM one attempt at phrasing the regex doesn't
+  // cover. Skipped entirely for anything the regex already understood,
+  // so the common case never pays for a network call it doesn't need.
+  if (isAskLogLLMEnabled() && parsed.symbol === null && parsed.kind === 'general' && parsed.sentiment === null) {
+    const llmParsed = await parseQuestionWithLLM(question, symbolIndex);
+    if (llmParsed) parsed = llmParsed;
+  }
+
   const sinceIso = new Date(Date.now() - parsed.sinceDays * 24 * 60 * 60 * 1000).toISOString();
 
   const rows = parsed.symbol
     ? await getEventsForSymbolSince(parsed.symbol, sinceIso, MAX_EVENTS)
     : await getEventsForSymbolsSince(watchlistSymbols, sinceIso, MAX_EVENTS);
 
-  return composeAnswer(parsed, rows.map(toAskLogEvent));
+  const result = composeAnswer(parsed, rows.map(toAskLogEvent));
+
+  // Rephrasing never changes `events` (the sources list) — only the
+  // prose, and only once isGrounded has confirmed it introduced no new
+  // number or symbol beyond what composeAnswer already produced.
+  if (isAskLogLLMEnabled() && result.events.length > 0) {
+    const answer = await rephraseAnswer(question, result.answer);
+    return { ...result, answer };
+  }
+
+  return result;
 }

@@ -32,3 +32,17 @@ export function isDemoReassuranceForced(): boolean {
 export function isExplanationLookupEnabled(): boolean {
   return process.env.ENABLE_EXPLANATION_LOOKUP === '1';
 }
+
+/**
+ * Ask the log's two LLM-assisted layers (src/lib/ask-log.ts) — parsing a
+ * question the deterministic regex parser couldn't make sense of, and
+ * rephrasing the deterministic answer into more natural prose (verified
+ * against the original before it's ever shown — see isGrounded). Off by
+ * default for the same reason as isExplanationLookupEnabled: the
+ * deterministic path is the trusted core, this only ever augments it,
+ * and one flag cuts both layers cleanly without touching the retrieval
+ * or answer-composition code underneath.
+ */
+export function isAskLogLLMEnabled(): boolean {
+  return process.env.ENABLE_ASK_LOG_LLM === '1';
+}

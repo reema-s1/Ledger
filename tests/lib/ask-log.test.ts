@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { parseQuestion, composeAnswer, type AskLogEvent, type SymbolIndexEntry, type ParsedQuery } from '../../src/lib/ask-log';
+import {
+  parseQuestion,
+  composeAnswer,
+  buildLLMParseMessages,
+  parseLLMParseResponse,
+  extractNumbers,
+  extractTickers,
+  isGrounded,
+  buildRephraseMessages,
+  parseRephraseResponse,
+  type AskLogEvent,
+  type SymbolIndexEntry,
+  type ParsedQuery,
+} from '../../src/lib/ask-log';
 
 const SYMBOL_INDEX: SymbolIndexEntry[] = [
   { symbol: 'WIPRO', name: 'Wipro Limited' },
@@ -183,5 +196,124 @@ describe('composeAnswer', () => {
     const events = [event({ symbol: 'WIPRO', explanation: 'WIPRO is down 2.6%, an unusually large move.' })];
     const result = composeAnswer(query({ symbol: 'WIPRO', kind: 'why_red', sentiment: 'up' }), events);
     expect(result.answer).toBe("WIPRO didn't move up in that window.");
+  });
+});
+
+describe('buildLLMParseMessages', () => {
+  it('lists the real watchlist symbols and requires the ANSWER format in the system prompt', () => {
+    const { system, user } = buildLLMParseMessages('how has wipro been lately', SYMBOL_INDEX);
+    expect(system).toContain('WIPRO (Wipro Limited)');
+    expect(system).toContain('TCS (Tata Consultancy Services)');
+    expect(system).toContain('ANSWER: symbol=<TICKER or NONE>');
+    expect(user).toContain('how has wipro been lately');
+  });
+
+  it('says no valid symbols when the watchlist is empty, rather than an empty list', () => {
+    const { system } = buildLLMParseMessages('anything happening', []);
+    expect(system).toContain('(none on the watchlist)');
+  });
+});
+
+describe('parseLLMParseResponse', () => {
+  it('parses a valid ANSWER line into a ParsedQuery', () => {
+    const result = parseLLMParseResponse('ANSWER: symbol=WIPRO | days=7 | sentiment=down', SYMBOL_INDEX);
+    expect(result).toEqual({ symbol: 'WIPRO', sinceDays: 7, kind: 'why_red', sentiment: 'down' });
+  });
+
+  it('maps symbol=NONE and sentiment=none to null, kind general', () => {
+    const result = parseLLMParseResponse('ANSWER: symbol=NONE | days=30 | sentiment=none', SYMBOL_INDEX);
+    expect(result).toEqual({ symbol: null, sinceDays: 30, kind: 'general', sentiment: null });
+  });
+
+  it('rejects a symbol the model picked that is not actually on the watchlist', () => {
+    // The model naming a real ticker that just isn't on THIS watchlist is
+    // exactly the case re-validation exists for - never trust the model's
+    // word over the real list, even when its answer is well-formed.
+    const result = parseLLMParseResponse('ANSWER: symbol=INFY | days=30 | sentiment=none', SYMBOL_INDEX);
+    expect(result?.symbol).toBeNull();
+  });
+
+  it('finds the ANSWER line after reasoning text and strips markdown around it', () => {
+    const verbose = '**ANSWER: symbol=TCS | days=1 | sentiment=up**';
+    expect(parseLLMParseResponse(verbose, SYMBOL_INDEX)?.symbol).toBe('TCS');
+  });
+
+  it('returns null (never throws) for a malformed or off-format response', () => {
+    expect(parseLLMParseResponse('Sure, I think this is about WIPRO!', SYMBOL_INDEX)).toBeNull();
+  });
+
+  it('returns null when there is no ANSWER line at all', () => {
+    expect(parseLLMParseResponse('', SYMBOL_INDEX)).toBeNull();
+  });
+});
+
+describe('extractNumbers', () => {
+  it('extracts every decimal and whole number from a sentence', () => {
+    expect(extractNumbers('Down 0.8% while the market was down 0.4%. That’s 2.8 standard deviations, on 4x normal volume.')).toEqual([
+      '0.8',
+      '0.4',
+      '2.8',
+      '4',
+    ]);
+  });
+
+  it('returns an empty array when there are no numbers', () => {
+    expect(extractNumbers('Nothing flagged in that window.')).toEqual([]);
+  });
+});
+
+describe('extractTickers', () => {
+  it('extracts plausible all-caps tickers, including ones joined by &', () => {
+    expect(extractTickers('RELIANCE and M&M both moved today')).toEqual(['RELIANCE', 'M&M']);
+  });
+
+  it('does not extract ordinary capitalized words as tickers', () => {
+    // Single letters and short/mixed-case words shouldn't false-positive.
+    expect(extractTickers('The Market was Up today')).toEqual([]);
+  });
+});
+
+describe('isGrounded', () => {
+  const original = 'RELIANCE is down 2.5% while the market was down 0.4%. That’s 2.8 standard deviations.';
+
+  it('accepts a rephrase that only reuses numbers and tickers already in the original', () => {
+    expect(isGrounded(original, 'RELIANCE dropped 2.5% today, a notable 2.8 standard deviation move.')).toBe(true);
+  });
+
+  it('rejects a rephrase that introduces a number not in the original', () => {
+    expect(isGrounded(original, 'RELIANCE dropped 2.5% on 3.2x normal volume.')).toBe(false);
+  });
+
+  it('rejects a rephrase that introduces a stock symbol not in the original', () => {
+    expect(isGrounded(original, 'RELIANCE and TCS both dropped 2.5% today.')).toBe(false);
+  });
+
+  it('accepts a rephrase that drops detail without adding anything new', () => {
+    expect(isGrounded(original, 'RELIANCE moved down 2.5% today.')).toBe(true);
+  });
+});
+
+describe('buildRephraseMessages', () => {
+  it('includes the original question and answer, and requires the REPHRASED format', () => {
+    const { system, user } = buildRephraseMessages('why is reliance down', 'RELIANCE is down 2.5%.');
+    expect(system).toContain('REPHRASED: <the rephrased answer, one paragraph>');
+    expect(system).toMatch(/only use facts, numbers, dates, and stock symbols/i);
+    expect(user).toContain('why is reliance down');
+    expect(user).toContain('RELIANCE is down 2.5%.');
+  });
+});
+
+describe('parseRephraseResponse', () => {
+  it('parses a valid REPHRASED line', () => {
+    expect(parseRephraseResponse('REPHRASED: RELIANCE dropped 2.5% today.')).toBe('RELIANCE dropped 2.5% today.');
+  });
+
+  it('finds the REPHRASED line after reasoning text and strips markdown around it', () => {
+    const verbose = 'Let me restate this clearly.\n**REPHRASED: RELIANCE dropped 2.5% today.**';
+    expect(parseRephraseResponse(verbose)).toBe('RELIANCE dropped 2.5% today.');
+  });
+
+  it('returns null (never throws) when there is no REPHRASED line', () => {
+    expect(parseRephraseResponse('Sure, here you go.')).toBeNull();
   });
 });
