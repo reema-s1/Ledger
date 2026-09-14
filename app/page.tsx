@@ -96,37 +96,48 @@ export default async function DigestPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0 }} data-tour="digest-cards">
-            {TIER_ORDER.map((tier) => {
-              const tierItems = grouped.get(tier)!;
-              if (tierItems.length === 0) return null;
-              return (
-                <section key={tier} style={{ marginBottom: 36 }}>
-                  <h2
-                    style={{
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: 'var(--ink-faint)',
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      marginBottom: 4,
-                    }}
-                  >
-                    {SECTION_LABEL[tier]}
-                  </h2>
-                  <div>
-                    {tierItems.map((item, i) => (
-                      <DigestCard
-                        key={`${item.symbol}-${item.tier}-${i}`}
-                        item={item}
-                        showExplain={isExplanationLookupEnabled()}
-                      />
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+          {/* The tour targets just the first card, not this whole (often
+              much taller than the viewport) column — see the same
+              reasoning on the watchlist table's header row and the
+              clusters page's first group. isFirstCard tracks across tiers
+              since whichever tier renders first depends on what's actually
+              in the digest, not always "recent". */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {(() => {
+              let firstCardTagged = false;
+              return TIER_ORDER.map((tier) => {
+                const tierItems = grouped.get(tier)!;
+                if (tierItems.length === 0) return null;
+                return (
+                  <section key={tier} style={{ marginBottom: 36 }}>
+                    <h2
+                      style={{
+                        fontFamily: 'var(--font-sans)',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: 'var(--ink-faint)',
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                        marginBottom: 4,
+                      }}
+                    >
+                      {SECTION_LABEL[tier]}
+                    </h2>
+                    <div>
+                      {tierItems.map((item, i) => {
+                        const isFirstCard = !firstCardTagged;
+                        if (isFirstCard) firstCardTagged = true;
+                        return (
+                          <div key={`${item.symbol}-${item.tier}-${i}`} data-tour={isFirstCard ? 'digest-cards' : undefined}>
+                            <DigestCard item={item} showExplain={isExplanationLookupEnabled()} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              });
+            })()}
 
             {reassurance.length > 0 && (
               <section style={{ marginTop: 44, paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
