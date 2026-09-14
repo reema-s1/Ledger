@@ -54,8 +54,8 @@ export function PersonalThreshold({ symbol, thresholdPct, exceeded }: { symbol: 
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="%"
-          className="tabular"
-          style={{ width: 48, fontSize: 11, padding: '2px 5px', border: '1px solid var(--rule)', borderRadius: 5, background: 'var(--bg)', color: 'var(--ink)' }}
+          className="tabular no-spinner"
+          style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center', border: '1px solid var(--rule)', borderRadius: 5, background: 'var(--bg)', color: 'var(--ink)' }}
         />
         <button onClick={save} disabled={saving} style={{ background: 'none', border: 'none', padding: 0, fontSize: 11, color: 'var(--accent-blue)', cursor: 'pointer', fontWeight: 600 }}>
           set
