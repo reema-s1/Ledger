@@ -12,12 +12,30 @@ interface AskLogEvent {
   significance: number | null;
 }
 
+// Pinned to UTC deliberately: this renders in a Client Component, which
+// Next.js also renders once on the server for the initial HTML. Without an
+// explicit timeZone, toLocaleDateString falls back to the runtime's local
+// timezone — the server (UTC) and a visitor's browser (whatever their OS is
+// set to) can then compute a different calendar day for the same instant,
+// a real hydration mismatch. Every timestamp here is UTC-anchored (see
+// src/seed/generate.ts), so UTC is also the *correct* day, not just the
+// safe one — same reasoning as digest-card.tsx's formatRange.
+function formatDate(ts: string): string {
+  return new Date(ts).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 /**
  * A quiet input-and-answer block, not a chat interface — one question,
  * one answer, sources shown right below it so the answer is traceable
  * back to real events, not a black box. Retrieval only (src/lib/ask-
  * log.ts): every word in the answer already existed in the events
  * table before this component ran.
+ *
+ * Sources show just the symbol and date, not the explanation again —
+ * composeAnswer already folds every cited event's explanation into the
+ * answer paragraph itself (the "Also: X — ..." clause), so repeating
+ * the same sentence a second time here was pure duplication, not
+ * additional traceability. The link is the actual citation.
  */
 export function AskLog() {
   const [question, setQuestion] = useState('');
@@ -118,15 +136,16 @@ export function AskLog() {
           <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: 0, color: 'var(--ink)' }}>{answer}</p>
 
           {sources.length > 0 && (
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
               {sources.map((s) => (
-                <p key={s.id} style={{ fontSize: 12, color: 'var(--ink-faint)', margin: 0, lineHeight: 1.5 }}>
-                  <Link href={`/symbol/${s.symbol}`} style={{ color: 'var(--ink-faint)', textDecoration: 'underline' }}>
-                    {s.symbol}
-                  </Link>
-                  {' — '}
-                  {s.explanation ?? 'flagged, no explanation stored'}
-                </p>
+                <Link
+                  key={s.id}
+                  href={`/symbol/${s.symbol}`}
+                  className="tabular"
+                  style={{ fontSize: 11.5, color: 'var(--ink-faint)', textDecoration: 'underline' }}
+                >
+                  {s.symbol} · {formatDate(s.ts)}
+                </Link>
               ))}
             </div>
           )}

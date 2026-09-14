@@ -81,6 +81,49 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
 
   return (
     <div>
+      {available.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 24, alignItems: 'center' }}>
+          <select
+            value={toAdd}
+            onChange={(e) => setToAdd(e.target.value)}
+            className="tabular"
+            style={{
+              flex: 1,
+              maxWidth: 360,
+              padding: '10px 12px',
+              border: '1px solid var(--rule)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--surface)',
+              color: 'var(--ink)',
+              fontSize: 13,
+            }}
+          >
+            {available.map((s) => (
+              <option key={s.symbol} value={s.symbol}>
+                {s.symbol} — {s.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleAdd}
+            disabled={pending === toAdd}
+            style={{
+              padding: '10px 18px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--accent)',
+              color: 'var(--accent-contrast)',
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: pending === toAdd ? 'default' : 'pointer',
+              opacity: pending === toAdd ? 0.5 : 1,
+            }}
+          >
+            Add
+          </button>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <p style={{ color: 'var(--ink-muted)', fontSize: 14, padding: '24px 0' }}>Nothing on your watchlist yet.</p>
       ) : (
@@ -183,48 +226,6 @@ export function WatchlistTable({ rows, available }: { rows: WatchlistRow[]; avai
         </div>
       )}
 
-      {available.length > 0 && (
-        <div style={{ display: 'flex', gap: 10, marginTop: 24, alignItems: 'center' }}>
-          <select
-            value={toAdd}
-            onChange={(e) => setToAdd(e.target.value)}
-            className="tabular"
-            style={{
-              flex: 1,
-              maxWidth: 360,
-              padding: '10px 12px',
-              border: '1px solid var(--rule)',
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--surface)',
-              color: 'var(--ink)',
-              fontSize: 13,
-            }}
-          >
-            {available.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.symbol} — {s.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleAdd}
-            disabled={pending === toAdd}
-            style={{
-              padding: '10px 18px',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--accent)',
-              color: 'var(--accent-contrast)',
-              fontWeight: 600,
-              fontSize: 13,
-              cursor: pending === toAdd ? 'default' : 'pointer',
-              opacity: pending === toAdd ? 0.5 : 1,
-            }}
-          >
-            Add
-          </button>
-        </div>
-      )}
       <UndoToast state={undo} onDismiss={() => setUndo(null)} />
     </div>
   );
