@@ -280,6 +280,17 @@ button {
   box-shadow: var(--shadow);
   max-width: 320px;
   padding: 16px;
+  transition: opacity 160ms ease;
+}
+/* product-tour.tsx toggles this class on <body> across a cross-page tour
+   step, for the whole gap between navigating and the next step actually
+   being highlighted — !important is needed because driver.js repositions
+   the popover in response to scroll/resize events a route change can
+   itself trigger, and that redraw would otherwise reassert plain inline
+   styles (opacity included) over anything set without it. */
+body.ledger-tour-transitioning .driver-popover {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 .ledger-tour-popover .driver-popover-title {
   font-family: var(--font-sans);

@@ -32,7 +32,37 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
   const router = useRouter();
   const driverRef = useRef<Driver | null>(null);
   const pendingRef = useRef<'start' | 'next' | 'prev' | null>(null);
+  // Which step index we're actually trying to reach — not the same as
+  // driver.js's own activeIndex, which can flip through intermediate
+  // values (including re-highlighting the *current* step, unchanged, in
+  // response to a scroll/resize event a route change can itself trigger)
+  // before genuinely landing here. onHighlighted fires for every one of
+  // those, so it's the only reliable way to tell "the tour has now
+  // actually reached the step I asked for" from "driver.js redrew
+  // something."
+  const targetIndexRef = useRef<number | null>(null);
   const [steps] = useState(() => TOUR_STEPS.filter((s) => s.optional !== 'playback' || playbackEnabled));
+
+  // The popover is driver.js's own DOM node, positioned against whatever
+  // element is currently highlighted — it has no idea a route change is
+  // about to sweep that element away. Without this, it just sits there
+  // showing the outgoing step, in the outgoing step's position, for the
+  // whole gap between calling router.push() and the new page's target
+  // element actually existing to highlight (the resume effect's own
+  // timeout, plus driver.js's own waitForElement polling on top of that).
+  // Fading it out the instant navigation starts, and back in only once the
+  // next step is actually correctly positioned (onHighlighted, below),
+  // turns that stale-card flash into a clean crossfade.
+  //
+  // Toggling a class on <body> rather than the popover's own inline style:
+  // driver.js repositions the popover in response to scroll/resize events
+  // that a route change can itself trigger, and that redraw resets
+  // whatever inline opacity we'd set on it directly. A class on an
+  // ancestor driver.js never touches, paired with an !important rule
+  // (app/globals.css), survives any number of those redraws.
+  function setPopoverVisible(visible: boolean) {
+    document.body.classList.toggle('ledger-tour-transitioning', !visible);
+  }
 
   function finish() {
     try {
@@ -40,12 +70,14 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
     } catch {
       // Best-effort — worst case the tour just offers to auto-start again next time.
     }
+    setPopoverVisible(true);
     driverRef.current?.destroy();
     driverRef.current = null;
   }
 
   function launch(startIndex: number) {
     driverRef.current?.destroy();
+    targetIndexRef.current = startIndex;
 
     const d = driver({
       allowClose: true,
@@ -63,6 +95,9 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
       onCloseClick: () => finish(),
       onDestroyed: () => {
         driverRef.current = null;
+      },
+      onHighlighted: (_element, _step, opts) => {
+        if (opts.index === targetIndexRef.current) setPopoverVisible(true);
       },
       // driver.js decides which handler the Next/Done button actually
       // *runs* (not just which label it shows) by checking whether any
@@ -118,8 +153,10 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
     // never fires again — the tour just sits there. window.location.pathname
     // has no such staleness; it's read fresh on every call.
     const currentPath = window.location.pathname;
+    targetIndexRef.current = index;
     if (step.page !== currentPath) {
       pendingRef.current = index > (d.getActiveIndex() ?? 0) ? 'next' : 'prev';
+      setPopoverVisible(false);
       router.push(step.page);
       return;
     }
@@ -171,7 +208,13 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => () => driverRef.current?.destroy(), []);
+  useEffect(
+    () => () => {
+      driverRef.current?.destroy();
+      document.body.classList.remove('ledger-tour-transitioning');
+    },
+    [],
+  );
 
   return (
     <button
