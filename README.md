@@ -2,7 +2,7 @@
 
 Most watchlists show you the current price and leave you to work out what
 changed. Ledger shows you **what changed since you last looked** — and
-only the changes that actually mean something.
+only the changes that mean something.
 
 **Live demo:** [ledger-diff.vercel.app](https://ledger-diff.vercel.app) · click **Try as Guest** — no sign-up, you get a ready-made watchlist and a short guided tour.
 
@@ -28,7 +28,7 @@ the bar, and that's the product working.
 
 ```mermaid
 flowchart LR
-    Y["Yahoo Finance<br/>real NSE prices"]
+    Y["Yahoo Finance<br/>NSE daily prices"]
 
     subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
         B["Backfill new sessions"]
@@ -61,8 +61,7 @@ flowchart LR
     P --> Browser(("You"))
     A --> Browser
 
-    O["OpenRouter + Google News<br/>optional, off by default"] -.-> A
-    W["Live worker<br/>on demand only"] -.-> K
+    O["Google News + OpenRouter<br/>news explanation"] -.-> P
 ```
 
 Every stock is ingested and scored **once**, no matter how many people
@@ -81,39 +80,36 @@ your digest until you mark it seen.
 ![The digest](docs/screenshots/digest.png)
 
 - Every card leads with a **sentence**, not a ticker and a percentage.
-  **Simple** mode keeps it plain; **Detailed** shows the real numbers.
+  **Simple** mode keeps it plain; **Detailed** shows the numbers behind it.
 - Four always-visible metrics per card (volume, move vs. peers, z-score,
   signal type), and a **breakdown** you can read in English or Hindi —
   only the words are translated, never the numbers.
 - Grouped by recency — **Today**, **This week**, **Earlier**. Being away
   four months gives you one line per stock, not thousands of events.
-- **Mark seen** is a real bookmark update on the server, not a checkbox.
+- **Mark seen** moves your bookmark on the server, so it holds across devices.
 - Old alerts get **graded afterwards** — "flagged 12 days ago, fully
   reverted since" — plus a running score of how past alerts held up.
-- When nothing's flagged, **Show me anyway** runs the real math live and
-  shows how close each stock came, so "all quiet" is provable, not claimed.
-- **Find possible explanation** (optional) searches real, dated news for a
-  flagged move and summarizes only what those articles say — always
-  labeled *unverified*, with the source link.
+- When nothing's flagged, **Show me anyway** scores each of your stocks and
+  shows how close it came to the bar.
+- **Find possible explanation** searches dated news for a flagged move and
+  summarizes only what those articles say — labeled *unverified*, with the
+  source link.
 
 ### Ask the log
 ![Ask the log](docs/screenshots/ask-the-log.png)
 
-Ask "why is my portfolio red today?" and get an answer built from the real
-event log — every sentence traces back to a stored event, with source
-links underneath. Optionally (`ENABLE_ASK_LOG_LLM=1`), an LLM helps
-*understand* the question and *rephrase* the answer — but it never decides
-what the facts are, and a rephrase is thrown away if it contains any number
-or stock that wasn't in the original answer.
+Ask "why is my portfolio red today?" and get an answer built from the event
+log — every sentence comes from a stored event, with links to the stocks
+underneath.
 
 ### Watchlist
 ![Watchlist](docs/screenshots/watchlist.png)
 
 - **Search to add** by ticker or company name — "tata" finds Tata Power.
-- Per stock: price, today's move (highlighted when it genuinely cleared the
+- Per stock: price, today's move (highlighted when it cleared the
   bar, not just when it's red), a chart, volume, and a price range labeled
-  by how much history is actually loaded.
-- The chart's **dots** mark days a real move was flagged; the **dotted
+  by how much history is loaded.
+- The chart's **dots** mark days a move was flagged; the **dotted
   line** is your bookmark, and the line after it only turns color when
   something significant happened since.
 - **Personal reminders** — "tell me if this moves more than 2%" — shown in
@@ -124,9 +120,9 @@ or stock that wasn't in the original answer.
 ### Clusters
 ![Correlation clusters](docs/screenshots/clusters.png)
 
-Stocks grouped by how they **actually move together** over the past 90
+Stocks grouped by how they **move together** over the past 90
 sessions — not by sector labels. Each group lists its members by how far
-they've drifted from the group today, and **Why grouped?** shows the real
+they've drifted from the group today, and **Why grouped?** shows the
 correlation numbers. Falls back to sector grouping when there isn't enough
 history yet.
 
@@ -134,51 +130,36 @@ history yet.
 ![Playback](docs/screenshots/playback.png)
 
 Rewind to any past day and see exactly what the digest and clusters looked
-like — rebuilt live from the event log, not a recording. Buttons to step a
-day forward or jump straight to the next real flagged move.
+like — rebuilt from the event log, not a recording. Buttons to step a day
+forward or jump straight to the next flagged move.
 
 ### Also
-- **Symbol page** — a stock's own events, its cluster, and an honest data
-  status: fresh, stale, unavailable, or failed a cross-check — with a
-  heartbeat dot that stops pulsing when the feed goes quiet, and a separate
-  low-liquidity tag on thin-volume days. Staleness counts only
-  **market-open hours**, so a Friday close isn't "3 days stale" on Monday.
-- **System page** — the real polling tier per stock, every price
-  disagreement ever caught, and each stock's latest ingestion outcome.
+- **Symbol page** — a stock's own events, its cluster, and a data status
+  (fresh, stale, or unavailable), plus a low-liquidity tag on thin-volume
+  days. Staleness counts only **market-open hours**, so a Friday close
+  isn't "3 days stale" on Monday.
+- **System page** — each stock's latest ingestion outcome.
 - **Guided tour**, light/dark theme, and stock splits handled correctly
-  (a real 5:1 KOTAKBANK split doesn't show up as an 80% crash).
+  (KOTAKBANK's 5:1 split doesn't show up as an 80% crash).
 
-## Data, honestly
+## Data
 
-| | Status |
-|---|---|
-| Historical prices | **Real** — ~220 NSE sessions for 39 stocks + NIFTY, from Yahoo Finance |
-| Daily updates | **Real** — a GitHub Action pulls each new session after the close |
-| Stock splits | **Real** — KOTAKBANK's 5:1 split on 2026-01-14 is in the data and handled |
-| Price cross-check | **Logic real, second source isn't** — no free independent NSE source exists, so it's checked against a jittered copy (plus one planted disagreement to catch) |
-| Live, second-by-second polling | **Built, not running in production** — see below |
+- **Prices:** ~220 NSE sessions for 39 stocks plus NIFTY, from Yahoo
+  Finance.
+- **Updates:** a GitHub Action adds each new session daily, after the
+  close.
+- **Splits:** KOTAKBANK's 5:1 split on 2026-01-14 is in the data and
+  adjusted for.
 
-**Why ingestion runs daily, not live.** The app ships with a live worker
-that polls every 5s–5min. Left running 24/7 it billed continuously for a
-market that's closed most hours, and kept the free-tier database from ever
-sleeping. A once-a-day job lands every session's real close about 90
-minutes after the bell for free. The live worker still works — run
-`npm run worker` locally, or redeploy it from `railway.json` for a window
-that genuinely needs live ticks.
-
-**Where an LLM is used.** Only in two optional, off-by-default features
-(news explanation, Ask the log assist) — and never to decide what's
-significant, never to predict prices, and never as the only source of an
-answer. Clustering and significance are plain, inspectable statistics on
-purpose: a confidently wrong answer about *why your money moved* is worse
-than an honest "nothing cleared the bar."
+**Where an LLM is used.** Only in **Find possible explanation**, to
+summarize news articles that were already found — never to decide what's
+significant or to predict prices. Clustering and significance are plain
+statistics, on purpose: a confidently wrong answer about *why your money
+moved* is worse than "nothing cleared the bar."
 
 ## Known limitations
 
 - **NSE holidays aren't modeled** — only Mon–Fri, 09:15–15:30 IST.
-- **Login is a stub** — passwords are hashed, but not to production
-  standards (no per-user salt, no rate limiting). It exists so two tabs can
-  share one account and show bookmark sync.
 - **Z-scores are relative to each stock's own recent history**, so they
   rank what deserves attention — they aren't comparable volatility figures
   across stocks.
@@ -189,7 +170,7 @@ than an honest "nothing cleared the bar."
 ## Tech
 
 Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL, no ORM ·
-Vercel · GitHub Actions · Vitest (181 tests, no database needed:
+Vercel · GitHub Actions · Vitest (190 tests, no database needed:
 `npx vitest run`) · driver.js for the tour.
 
 The full technical write-up — schema, the significance math, clustering,
@@ -207,6 +188,6 @@ npm run backfill    # ingests every session in one pass
 npm run dev
 ```
 
-Real price history is committed, so this uses real data out of the box.
+Price history is committed, so this works out of the box.
 Optional features and flags are listed in `.env.example`; setup notes and
 troubleshooting are in [`LOCAL.md`](LOCAL.md).
