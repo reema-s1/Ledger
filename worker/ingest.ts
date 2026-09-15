@@ -129,14 +129,14 @@ async function resolvePriorEvents(symbol: string, currentClose: number, ts: Date
  * `npm run backfill` script both go through this same function, so
  * neither can silently produce inconsistent status data.
  */
-export async function ingestSymbol(symbol: string, sources: Sources): Promise<IngestResult[]> {
-  const results = await ingestSymbolSessions(symbol, sources);
+export async function ingestSymbol(symbol: string, sources: Sources, opts: { recheckLatest?: boolean } = {}): Promise<IngestResult[]> {
+  const results = await ingestSymbolSessions(symbol, sources, opts.recheckLatest ?? false);
   const last = results[results.length - 1];
   if (last) await upsertIngestStatus(last.symbol, last.sessionDate, last.outcome);
   return results;
 }
 
-async function ingestSymbolSessions(symbol: string, sources: Sources): Promise<IngestResult[]> {
+async function ingestSymbolSessions(symbol: string, sources: Sources, recheckLatest: boolean): Promise<IngestResult[]> {
   const { primary, secondary } = sources;
 
   const [primaryHistory, secondaryHistory, actionRows, watermark] = await Promise.all([
@@ -151,7 +151,20 @@ async function ingestSymbolSessions(symbol: string, sources: Sources): Promise<I
   }
 
   const actions = toActions(actionRows);
-  const pendingDates = primaryHistory.map((c) => c.sessionDate).filter((d) => !watermark || d > watermark);
+  const newDates = primaryHistory.map((c) => c.sessionDate).filter((d) => !watermark || d > watermark);
+  // Optionally re-process the newest already-stored session before any new
+  // ones. The watermark alone means a session is never revisited once its
+  // candle exists — so a day stored but never properly scored (a scoring
+  // bug since fixed, or a manual run mid-session that saved a half-finished
+  // bar) stayed that way permanently. Re-checking it is safe: the candle
+  // upsert is ON CONFLICT DO UPDATE, every event append is ON CONFLICT DO
+  // NOTHING, and it's only ever the *newest* stored day — so
+  // resolvePriorEvents, which looks at every still-unresolved move, has no
+  // later move it could wrongly measure against this day's older close.
+  // Off for the long-running worker, which would otherwise redo a full
+  // evaluation every few seconds per symbol for no benefit.
+  const recheck = recheckLatest && watermark && primaryHistory.some((c) => c.sessionDate === watermark) ? [watermark] : [];
+  const pendingDates = [...recheck, ...newDates];
   if (pendingDates.length === 0) return [];
 
   const secondaryByDate = new Map(secondaryHistory.map((c) => [c.sessionDate, c]));

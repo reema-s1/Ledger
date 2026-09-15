@@ -32,7 +32,10 @@ async function main() {
     // known, documented gap), so it 404s on every single run and used to
     // take MPHASIS through WIPRO down with it.
     try {
-      const results = await ingestSymbol(s.symbol, sources);
+      // recheckLatest: this script is the daily job, so re-scoring the newest
+      // stored session lets a badly-scored day heal on the next run instead
+      // of needing a hand-run delete (see ingestSymbolSessions).
+      const results = await ingestSymbol(s.symbol, sources, { recheckLatest: true });
       for (const r of results) {
         outcomeCounts.set(r.outcome, (outcomeCounts.get(r.outcome) ?? 0) + 1);
         if (r.significanceEvent) events += 1;
