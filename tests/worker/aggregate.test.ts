@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { alignBars, computeClusterMeanReturns } from '../../worker/aggregate';
+import { restrictToSharedDates, alignBars, computeClusterMeanReturns } from '../../worker/aggregate';
 import type { RawBar } from '../../worker/corporate-actions';
 
 describe('alignBars', () => {
@@ -61,5 +61,22 @@ describe('computeClusterMeanReturns', () => {
       { sessionDate: '2026-08-18', close: 101, volume: 1 },
     ];
     expect(computeClusterMeanReturns(symbolBars, [])).toEqual([]);
+  });
+});
+
+describe('restrictToSharedDates', () => {
+  const bar = (sessionDate: string, close = 100) => ({ sessionDate, close, volume: 1000 });
+
+  it('drops sessions the other series lacks, preserving order', () => {
+    const stock = [bar('2026-06-25'), bar('2026-06-26'), bar('2026-06-29')];
+    const index = [bar('2026-06-25'), bar('2026-06-29')]; // Yahoo omitted the 26th
+    expect(restrictToSharedDates(stock, index).map((b) => b.sessionDate)).toEqual(['2026-06-25', '2026-06-29']);
+  });
+
+  it('lets the index align after narrowing, where a single gap made alignBars refuse it', () => {
+    const stock = [bar('2026-06-25'), bar('2026-06-26'), bar('2026-06-29')];
+    const index = [bar('2026-06-25'), bar('2026-06-29')];
+    expect(alignBars(stock, index)).toBeNull();
+    expect(alignBars(restrictToSharedDates(stock, index), index)).not.toBeNull();
   });
 });

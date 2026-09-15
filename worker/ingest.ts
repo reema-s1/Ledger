@@ -25,7 +25,7 @@ import { getDataMode } from '../src/lib/data-mode';
 import { adjustBarsForCorporateActions, isExDate, type CorporateAction, type RawBar } from './corporate-actions';
 import { reconcileQuotes, type SourceQuote } from './reconcile';
 import { checkForResolution } from './stale-alerts';
-import { alignBars, computeClusterMeanReturns } from './aggregate';
+import { alignBars, computeClusterMeanReturns, restrictToSharedDates } from './aggregate';
 import { listCorporateActions, type CorporateActionRow } from '../db/queries/corporate-actions';
 import { upsertCandle, getLatestCandleDate } from '../db/queries/candles';
 import { getLatestClusterForSymbol } from '../db/queries/clusters';
@@ -236,20 +236,25 @@ async function ingestSymbolSessions(symbol: string, sources: Sources): Promise<I
       adjustBarsForCorporateActions(toRawBars(through(p.raw, sessionDate)), p.actions),
     );
 
-    const indexBars = alignBars(symbolBars, indexBarsRaw);
-    const alignedPeerBars = peerBarsRaw.map((p) => alignBars(symbolBars, p)).filter((p): p is NonNullable<typeof p> => p !== null);
+    // Scored on the index's calendar, not the stock's own — see
+    // restrictToSharedDates for the NIFTY gap that made every stock fail here.
+    // Today itself must survive the narrowing, or there's nothing to score.
+    const scoredBars = restrictToSharedDates(symbolBars, indexBarsRaw);
+    const scoresToday = scoredBars.length >= 2 && scoredBars[scoredBars.length - 1]!.sessionDate === sessionDate;
+    const indexBars = scoresToday ? alignBars(scoredBars, indexBarsRaw) : null;
+    const alignedPeerBars = peerBarsRaw.map((p) => alignBars(scoredBars, p)).filter((p): p is NonNullable<typeof p> => p !== null);
 
     if (!indexBars || alignedPeerBars.length === 0) {
       results.push({ symbol, sessionDate, outcome: 'insufficient-cluster-history', significanceEvent: null, resolvedPriorEvent: false, reassuranceEvent: false });
       continue;
     }
 
-    const clusterReturns = computeClusterMeanReturns(symbolBars, alignedPeerBars);
+    const clusterReturns = computeClusterMeanReturns(scoredBars, alignedPeerBars);
     const clusterLabel = cluster.method === 'sector' ? cluster.cluster_id.replace('sector:', '') : 'its cluster';
 
     const input: SignificanceInput = {
       symbol,
-      symbolBars: symbolBars.map((b) => ({ sessionDate: b.sessionDate, close: b.close, volume: b.volume })),
+      symbolBars: scoredBars.map((b) => ({ sessionDate: b.sessionDate, close: b.close, volume: b.volume })),
       indexBars,
       clusterReturns,
     };
@@ -259,8 +264,8 @@ async function ingestSymbolSessions(symbol: string, sources: Sources): Promise<I
     try {
       const result = evaluate(input, DEFAULT_CONFIG, clusterLabel);
       if (result) {
-        const todayAdjusted = symbolBars[symbolBars.length - 1]!;
-        const baselineAdjusted = symbolBars[symbolBars.length - 2]!;
+        const todayAdjusted = scoredBars[scoredBars.length - 1]!;
+        const baselineAdjusted = scoredBars[scoredBars.length - 2]!;
         const appended = await appendEvent({
           symbol,
           ts: todayRaw.ts,

@@ -57,7 +57,9 @@ export async function GET(request: NextRequest) {
   // Same split as get-digest.ts: reassurance/resolution never reach compactEvents.
   const flagged = digestEvents.filter((e) => e.kind !== 'reassurance' && e.kind !== 'resolution');
   const resolutions = digestEvents.filter((e) => e.kind === 'resolution');
-  const compacted = compactEvents(flagged, asOf);
+  // The scrubbed date is the "latest session" for that reconstruction, same
+  // anchoring as the live digest (see compactEvents).
+  const compacted = compactEvents(flagged, asOf, dateParam);
   const items = attachResolutionNotes(compacted, resolutions, asOf);
 
   return NextResponse.json({ date: dateParam, items, clusters });

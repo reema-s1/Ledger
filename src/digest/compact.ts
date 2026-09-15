@@ -1,12 +1,22 @@
 /**
  * Hierarchical compaction: the read path's core job. A user gone 4 months
  * must not receive 40,000 events — they get a readable paragraph. Pure
- * function of (events, now) so it's unit-testable without a database.
+ * function of (events, now, latestSessionDate?) so it's unit-testable
+ * without a database.
  *
- *   < 1 day away   -> individual events, full detail  ("recent")
- *   1-7 days       -> one narrative per symbol, price-move events merged
+ *   latest session -> individual events, full detail  ("recent")
+ *   within 7 days  -> one narrative per symbol, price-move events merged
  *                     ("episode", e.g. "drifted -6% over 3 sessions")
- *   > 7 days       -> one line per symbol, net change  ("chapter")
+ *   older          -> one line per symbol, net change  ("chapter")
+ *
+ * Tiers are anchored to the newest *ingested session* when the caller
+ * knows it, not to wall-clock "last 24 hours." Data arrives once per
+ * trading day, stamped at the 09:15 IST open, and lands after the close —
+ * so a 24h rule kept a session in the top tier only from evening until
+ * 09:15 the next morning. For a daytime look, and on every weekend and
+ * holiday, the top tier was empty, and with it the only cards that carry
+ * a decomposition (metrics, breakdown, the Hindi toggle). Without an
+ * anchor the old rule still applies, relative to `now`.
  *
  * A resolved move (Section 5's `event_resolved`, superseding its trigger)
  * is folded into a single item showing the resolved outcome — "spiked 6%,
@@ -17,6 +27,7 @@
 
 import type { DigestEvent, DigestItem, DigestItemKind, DigestTier } from './types';
 import type { Decomposition } from '../significance/types';
+import { istDateString } from '../lib/time/market-calendar';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EPISODE_CUTOFF_MS = 7 * DAY_MS;
@@ -77,6 +88,20 @@ function buildEffectiveEvents(events: DigestEvent[]): EffectiveEvent[] {
 function tierFor(ageMs: number): DigestTier {
   if (ageMs < DAY_MS) return 'recent';
   if (ageMs < EPISODE_CUTOFF_MS) return 'episode';
+  return 'chapter';
+}
+
+/** Whole calendar days between two YYYY-MM-DD dates (b - a). */
+function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
+}
+
+function tierForSession(eventTs: Date, latestSessionDate: string): DigestTier {
+  const eventDate = istDateString(eventTs);
+  // `>=` rather than `===`: an event can't legitimately postdate the newest
+  // candle, but if one ever did, "latest" is still the honest tier for it.
+  if (eventDate >= latestSessionDate) return 'recent';
+  if (daysBetween(eventDate, latestSessionDate) < 7) return 'episode';
   return 'chapter';
 }
 
@@ -152,12 +177,13 @@ function narrateGroup(symbol: string, events: EffectiveEvent[], tier: DigestTier
   return items;
 }
 
-export function compactEvents(events: DigestEvent[], now: Date): DigestItem[] {
+export function compactEvents(events: DigestEvent[], now: Date, latestSessionDate?: string | null): DigestItem[] {
   const effective = buildEffectiveEvents(events);
 
   const buckets: Record<DigestTier, EffectiveEvent[]> = { recent: [], episode: [], chapter: [] };
   for (const e of effective) {
-    buckets[tierFor(now.getTime() - e.ts.getTime())].push(e);
+    const tier = latestSessionDate ? tierForSession(e.ts, latestSessionDate) : tierFor(now.getTime() - e.ts.getTime());
+    buckets[tier].push(e);
   }
 
   const items: DigestItem[] = [];

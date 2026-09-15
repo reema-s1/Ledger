@@ -106,6 +106,18 @@ export async function getUnconfirmedCandles(): Promise<CandleRow[]> {
 }
 
 /** How many distinct sessions have been ingested so far — the system panel's "day X of the replay" proxy. */
+/**
+ * The newest trading session with any ingested data, across every symbol —
+ * the digest's anchor for "latest session." Deliberately market-wide, not
+ * per user: anchoring to a user's own newest *unread* event would promote
+ * a three-week-old move to the top tier for someone who'd already read
+ * everything since.
+ */
+export async function getLatestSessionDate(): Promise<string | null> {
+  const row = await queryOne<{ session_date: string | null }>('SELECT max(session_date) AS session_date FROM candles');
+  return row?.session_date ?? null;
+}
+
 export async function countIngestedSessionDates(): Promise<number> {
   const row = await queryOne<{ count: number }>('SELECT count(DISTINCT session_date)::int AS count FROM candles');
   return row?.count ?? 0;

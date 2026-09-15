@@ -51,3 +51,19 @@ describe('buildReassuranceCards', () => {
     expect(cards.map((c) => c.symbol)).toEqual(['B', 'D', 'C']);
   });
 });
+
+describe('buildReassuranceCards — anchored to the latest ingested session', () => {
+  it('keeps the latest session even when it is more than 24 hours old', () => {
+    const tueOpen = new Date('2026-09-15T03:45:00Z');
+    const wedAfternoon = new Date('2026-09-16T10:30:00Z');
+    const events = [reassuranceEvent(1, 'TCS', tueOpen, -0.03)];
+    expect(buildReassuranceCards(events, wedAfternoon)).toHaveLength(0);
+    expect(buildReassuranceCards(events, wedAfternoon, '2026-09-15')).toHaveLength(1);
+  });
+
+  it('drops reassurance from an earlier session', () => {
+    const monOpen = new Date('2026-09-14T03:45:00Z');
+    const events = [reassuranceEvent(1, 'TCS', monOpen, -0.03)];
+    expect(buildReassuranceCards(events, new Date('2026-09-15T10:30:00Z'), '2026-09-15')).toHaveLength(0);
+  });
+});

@@ -284,3 +284,46 @@ describe('compactEvents — decomposition passthrough', () => {
     expect(items[0]!.decomposition).toBeUndefined();
   });
 });
+
+describe('compactEvents — anchored to the latest ingested session', () => {
+  // Real shape of the data: Yahoo stamps each daily bar at the 09:15 IST
+  // open (03:45Z), and it's ingested after the close. Looked at on a
+  // Wednesday afternoon, Tuesday's session is 30+ hours old by wall clock.
+  const tueOpen = new Date('2026-09-15T03:45:00Z');
+  const monOpen = new Date('2026-09-14T03:45:00Z');
+  const wedAfternoon = new Date('2026-09-16T10:30:00Z');
+
+  it('puts the latest session in the recent tier however long ago it was by wall clock', () => {
+    const events: DigestEvent[] = [moveEvent({ id: 1, symbol: 'TCS', ts: tueOpen })];
+    // Without the anchor, 30h old = episode, which is what hid the full-detail cards.
+    expect(compactEvents(events, wedAfternoon)[0]!.tier).toBe('episode');
+    expect(compactEvents(events, wedAfternoon, '2026-09-15')[0]!.tier).toBe('recent');
+  });
+
+  it('keeps the recent tier to that one session only', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'TCS', ts: tueOpen }),
+      moveEvent({ id: 2, symbol: 'INFY', ts: monOpen }),
+    ];
+    const items = compactEvents(events, wedAfternoon, '2026-09-15');
+    expect(items.find((i) => i.symbol === 'TCS')!.tier).toBe('recent');
+    expect(items.find((i) => i.symbol === 'INFY')!.tier).toBe('episode');
+  });
+
+  it('survives a weekend: a Friday session is still the latest one on Monday morning', () => {
+    const friOpen = new Date('2026-09-11T03:45:00Z');
+    const monMorning = new Date('2026-09-14T02:00:00Z');
+    const events: DigestEvent[] = [moveEvent({ id: 1, symbol: 'TCS', ts: friOpen })];
+    expect(compactEvents(events, monMorning, '2026-09-11')[0]!.tier).toBe('recent');
+  });
+
+  it('measures the episode and chapter cutoffs from the latest session, not from now', () => {
+    const events: DigestEvent[] = [
+      moveEvent({ id: 1, symbol: 'TCS', ts: new Date('2026-09-09T03:45:00Z') }), // 6 days before
+      moveEvent({ id: 2, symbol: 'INFY', ts: new Date('2026-09-07T03:45:00Z') }), // 8 days before
+    ];
+    const items = compactEvents(events, wedAfternoon, '2026-09-15');
+    expect(items.find((i) => i.symbol === 'TCS')!.tier).toBe('episode');
+    expect(items.find((i) => i.symbol === 'INFY')!.tier).toBe('chapter');
+  });
+});

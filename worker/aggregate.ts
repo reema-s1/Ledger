@@ -2,6 +2,24 @@ import type { Bar } from '../src/significance/types';
 import type { RawBar } from './corporate-actions';
 
 /**
+ * `reference` narrowed to the sessions `other` also has, order preserved.
+ *
+ * Used to put a stock's series onto the index's calendar *before*
+ * aligning, because alignBars (below) refuses any date the index lacks —
+ * correct for a peer, but fatal for the index, which every stock needs.
+ * Yahoo's NIFTY series silently omits single days (26 Jun 2026, in a 3mo
+ * window where every stock has it), and that one gap made alignment fail
+ * for all 39 stocks on every live ingest until the day scrolled out of the
+ * lookback — prices landed, significance was never evaluated. Dropping the
+ * few sessions the index can't vouch for costs one slightly longer return
+ * interval in the rolling window; refusing them cost the whole engine.
+ */
+export function restrictToSharedDates(reference: RawBar[], other: RawBar[]): RawBar[] {
+  const dates = new Set(other.map((b) => b.sessionDate));
+  return reference.filter((b) => dates.has(b.sessionDate));
+}
+
+/**
  * Re-indexes `other` onto `reference`'s exact session dates. Returns null
  * if `other` is missing any date `reference` has — a peer or the index
  * with gappier history than the symbol being evaluated isn't safe to

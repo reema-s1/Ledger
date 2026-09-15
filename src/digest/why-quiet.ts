@@ -12,7 +12,7 @@ import { getRecentCandles } from '../../db/queries/candles';
 import { listCorporateActions, type CorporateActionRow } from '../../db/queries/corporate-actions';
 import { getLatestClusterForSymbol } from '../../db/queries/clusters';
 import { adjustBarsForCorporateActions, isExDate, type CorporateAction, type RawBar } from '../../worker/corporate-actions';
-import { alignBars, computeClusterMeanReturns } from '../../worker/aggregate';
+import { alignBars, computeClusterMeanReturns, restrictToSharedDates } from '../../worker/aggregate';
 import { decompose } from '../significance/decompose';
 import { DEFAULT_CONFIG } from '../significance/config';
 import { INDEX_SYMBOL } from '../seed/symbols';
@@ -106,20 +106,28 @@ async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<Qui
     Promise.all(peers.map((p) => cache.getBars(p, 130))),
   ]);
 
-  const indexBars = indexBarsRaw ? alignBars(symbolBars, indexBarsRaw) : null;
+  // Stock bars come from the database, the index from the quote source —
+  // in replay mode that's the committed snapshot, which stops at whatever
+  // session it was fetched through while the daily job keeps adding newer
+  // candles. Narrowing to the dates both have scores the newest session
+  // the index can actually vouch for (and reports *that* date) instead of
+  // failing alignment for every symbol the moment the database gets ahead.
+  const scoredBars = indexBarsRaw ? restrictToSharedDates(symbolBars, indexBarsRaw) : [];
+  const scoredDate = scoredBars.length > 0 ? scoredBars[scoredBars.length - 1]!.sessionDate : sessionDate;
+  const indexBars = indexBarsRaw && scoredBars.length >= 2 ? alignBars(scoredBars, indexBarsRaw) : null;
   const alignedPeers = peerBarsRaw
     .filter((p): p is RawBar[] => p !== null)
-    .map((p) => alignBars(symbolBars, p))
+    .map((p) => alignBars(scoredBars, p))
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
   if (!indexBars || alignedPeers.length === 0) {
     return { symbol, sessionDate, residualZ: null, volumeRatio: null, clearedBar: false, zFraction: null, reason: 'insufficient cluster history' };
   }
 
-  const clusterReturns = computeClusterMeanReturns(symbolBars, alignedPeers);
+  const clusterReturns = computeClusterMeanReturns(scoredBars, alignedPeers);
   const input: SignificanceInput = {
     symbol,
-    symbolBars: symbolBars.map((b) => ({ sessionDate: b.sessionDate, close: b.close, volume: b.volume })),
+    symbolBars: scoredBars.map((b) => ({ sessionDate: b.sessionDate, close: b.close, volume: b.volume })),
     indexBars,
     clusterReturns,
   };
@@ -147,7 +155,7 @@ async function explainWhyQuiet(symbol: string, cache: RequestCache): Promise<Qui
     reason = `${absZ.toFixed(1)}σ — comfortably normal for this stock.`;
   }
 
-  return { symbol, sessionDate, residualZ: d.residualZ, volumeRatio: d.volumeRatio, clearedBar, zFraction, reason };
+  return { symbol, sessionDate: scoredDate, residualZ: d.residualZ, volumeRatio: d.volumeRatio, clearedBar, zFraction, reason };
 }
 
 export async function explainWhyQuietForSymbols(symbols: string[]): Promise<QuietReason[]> {

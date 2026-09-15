@@ -1,6 +1,7 @@
 import { listWatchlist } from '../../db/queries/watchlist';
 import { getCursorOrDefault } from '../../db/queries/cursors';
 import { getEventsSinceForSymbols, getResolutionStats } from '../../db/queries/events';
+import { getLatestSessionDate } from '../../db/queries/candles';
 import { compactEvents } from './compact';
 import { buildReassuranceCards, buildDemoFallbackReassuranceCard, type ReassuranceCard } from './reassurance-cards';
 import { attachResolutionNotes } from './resolution-notes';
@@ -21,6 +22,8 @@ export interface DigestResult {
   reassurance: ReassuranceCard[];
   /** Calibration line ("14 held, 6 reverted") across the last 20 graded alerts, not scoped to this user's watchlist. */
   resolutionStats: ResolutionStats;
+  /** Newest ingested session (YYYY-MM-DD) the top tier is anchored to, so the UI can label it "Today" only when it actually is. */
+  latestSessionDate: string | null;
 }
 
 /**
@@ -29,11 +32,14 @@ export interface DigestResult {
  * cursor, per watchlisted symbol, compacted." Never advances a cursor.
  */
 export async function getDigestForUser(userId: number): Promise<DigestResult> {
-  const watchlist = await listWatchlist(userId);
-  const resolutionStats = await getResolutionStats(20);
+  const [watchlist, resolutionStats, latestSessionDate] = await Promise.all([
+    listWatchlist(userId),
+    getResolutionStats(20),
+    getLatestSessionDate(),
+  ]);
   if (watchlist.length === 0) {
     const reassurance = isDemoReassuranceForced() ? [buildDemoFallbackReassuranceCard(new Date())] : [];
-    return { items: [], cursors: {}, reassurance, resolutionStats };
+    return { items: [], cursors: {}, reassurance, resolutionStats, latestSessionDate };
   }
 
   const cursorEntries = await Promise.all(
@@ -62,9 +68,9 @@ export async function getDigestForUser(userId: number): Promise<DigestResult> {
   const flaggedEvents = digestEvents.filter((e) => e.kind !== 'reassurance' && e.kind !== 'resolution');
 
   const now = new Date();
-  const compacted = compactEvents(flaggedEvents, now);
+  const compacted = compactEvents(flaggedEvents, now, latestSessionDate);
   const items = attachResolutionNotes(compacted, resolutionEvents, now);
-  const realReassurance = buildReassuranceCards(reassuranceEvents, now);
+  const realReassurance = buildReassuranceCards(reassuranceEvents, now, latestSessionDate);
   const reassurance =
     realReassurance.length === 0 && isDemoReassuranceForced()
       ? [buildDemoFallbackReassuranceCard(now)]
@@ -73,5 +79,5 @@ export async function getDigestForUser(userId: number): Promise<DigestResult> {
   const cursors: Record<string, number> = {};
   for (const c of cursorEntries) cursors[c.symbol] = c.sinceEventId;
 
-  return { items, cursors, reassurance, resolutionStats };
+  return { items, cursors, reassurance, resolutionStats, latestSessionDate };
 }

@@ -9,6 +9,7 @@
  */
 
 import type { DigestEvent } from './types';
+import { istDateString } from '../lib/time/market-calendar';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_REASSURANCE_CARDS = 3;
@@ -24,9 +25,17 @@ export interface ReassuranceCard {
   ts: string;
 }
 
-export function buildReassuranceCards(events: DigestEvent[], now: Date): ReassuranceCard[] {
+/**
+ * With `latestSessionDate`, keeps reassurance from the newest ingested
+ * session rather than the last 24 wall-clock hours — same reasoning as
+ * compactEvents' tier anchor: with once-a-day data stamped at the open,
+ * a 24h window left this section empty for most of every day.
+ */
+export function buildReassuranceCards(events: DigestEvent[], now: Date, latestSessionDate?: string | null): ReassuranceCard[] {
+  const isCurrent = (e: DigestEvent) =>
+    latestSessionDate ? istDateString(e.ts) >= latestSessionDate : now.getTime() - e.ts.getTime() < DAY_MS;
   return events
-    .filter((e) => e.kind === 'reassurance' && now.getTime() - e.ts.getTime() < DAY_MS)
+    .filter((e) => e.kind === 'reassurance' && isCurrent(e))
     .map((e) => ({
       symbol: e.symbol,
       headline: e.explanation ?? '',

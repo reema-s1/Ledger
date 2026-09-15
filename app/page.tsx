@@ -12,6 +12,7 @@ import { ResolutionStatsLine } from './components/resolution-stats-line';
 import { SimpleDetailProvider } from './components/simple-detail-context';
 import { SimpleDetailToggle } from './components/simple-detail-toggle';
 import type { DigestItem, DigestTier } from '../src/digest/types';
+import { istDateString } from '../src/lib/time/market-calendar';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,24 @@ const SECTION_LABEL: Record<DigestTier, string> = {
   episode: 'This week',
   chapter: 'Earlier',
 };
+
+/**
+ * The top tier is the newest ingested session, which is only "today" on a
+ * trading day after the daily ingest has run — the rest of the time it's
+ * an earlier session, and labeling that "Today" would be a small lie at
+ * the top of the page. Session dates are IST calendar dates.
+ */
+function recentLabel(latestSessionDate: string | null): string {
+  if (!latestSessionDate) return SECTION_LABEL.recent;
+  if (latestSessionDate === istDateString(new Date())) return 'Today';
+  const formatted = new Date(`${latestSessionDate}T00:00:00Z`).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+  return `Latest session · ${formatted}`;
+}
 const TIER_ORDER: DigestTier[] = ['recent', 'episode', 'chapter'];
 
 function groupByTier(items: DigestItem[]): Map<DigestTier, DigestItem[]> {
@@ -35,7 +54,7 @@ export default async function DigestPage() {
   }
   const userId = await getCurrentUserId();
 
-  const [{ items, reassurance, resolutionStats }, watchlist] = await Promise.all([
+  const [{ items, reassurance, resolutionStats, latestSessionDate }, watchlist] = await Promise.all([
     getDigestForUser(userId),
     listWatchlist(userId),
   ]);
@@ -121,7 +140,7 @@ export default async function DigestPage() {
                         marginBottom: 4,
                       }}
                     >
-                      {SECTION_LABEL[tier]}
+                      {tier === 'recent' ? recentLabel(latestSessionDate) : SECTION_LABEL[tier]}
                     </h2>
                     <div>
                       {tierItems.map((item, i) => {

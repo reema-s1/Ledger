@@ -504,8 +504,14 @@ a silent no-op, not an error, verified below.
 `src/digest/compact.ts`, a pure function of `(events, now)`, no I/O. Per
 the brief's tiers:
 
-- **< 1 day** — individual events, full detail, newest first.
-- **1-7 days** ("episode") — every price-move event for a symbol in this
+- **Latest session** — individual events, full detail, newest first.
+  Anchored to the newest ingested trading session, not "the last 24
+  hours": daily bars are stamped at the 09:15 IST open and land after the
+  close, so a 24h rule emptied this tier by the next morning and on every
+  weekend — and it's the only tier whose cards carry a decomposition
+  (metrics, breakdown, Hindi). The 7-day cutoffs below are measured from
+  that same session.
+- **Within 7 days** ("episode") — every price-move event for a symbol in this
   window merges into one narrative: *"TCS drifted down 6.0% over 3
   sessions."*
 - **> 7 days** ("chapter") — every price-move event for a symbol, no
