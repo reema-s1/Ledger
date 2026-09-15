@@ -108,7 +108,7 @@ export function ClusterVisual({ groups, moved, width = 632 }: ClusterVisualProps
                     {/* A little invisible padding around the dot itself, same reason as the group's hit circle. */}
                     <circle cx={x} cy={y} r={dotRadius + 6} fill="transparent" stroke="none" />
                     <circle cx={x} cy={y} r={dotRadius} fill={dotColor}>
-                      <title>{symbol} — open symbol page</title>
+                      <title>{`${symbol} — open symbol page`}</title>
                     </circle>
                     <text
                       x={x}

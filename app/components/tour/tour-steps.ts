@@ -24,9 +24,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     page: '/',
     selector: '[data-tour="nav-links"]',
-    title: 'Five real screens',
+    title: 'Five screens',
     description:
-      'Digest, Watchlist, Clusters, System, and (if enabled) Playback — every one of them queries the live database, nothing here is a mockup.',
+      'Digest, Watchlist, Clusters, Playback and System — each one reads straight from the database.',
   },
   {
     page: '/',
@@ -40,27 +40,27 @@ export const TOUR_STEPS: TourStep[] = [
     selector: '[data-tour="digest-cards"]',
     title: 'The diff, not the state',
     description:
-      "Every card leads with a real sentence, not a raw price. If a card shows the four small metrics under its headline (volume, move vs. cluster, z-score, signal), that's the significance engine's own math — not a summary written after the fact.",
+      "Every card leads with a sentence, not a raw price. If a card shows the four small metrics under its headline (volume, move vs. cluster, z-score, signal), that's the significance engine's own math — not a summary written after the fact.",
   },
   {
     page: '/',
     selector: '[data-tour="ask-log"]',
     title: 'Ask the log',
     description:
-      'Type a plain question about your watchlist. The answer is assembled entirely from real stored events — no AI guessing, every word traceable to something that actually happened.',
+      'Type a plain question about your watchlist. The answer is built from stored events, with links to the stocks behind it.',
   },
   {
     page: '/watchlist',
     selector: '[data-tour="watchlist-table"]',
-    title: 'Your real watchlist',
-    description: 'Price, today’s move, a chart, real 1D volume, and a range bar honestly labeled by how much history is actually behind it.',
+    title: 'Your watchlist',
+    description: 'Price, today’s move, a chart, 1D volume, and a range bar labeled by how much history is behind it.',
   },
   {
     page: '/watchlist',
     selector: '[data-tour="sparkline"]',
-    title: 'Real markers, real cursor',
+    title: 'Markers and your bookmark',
     description:
-      'The small dots mark real flagged events. The dotted line is where you last left off — the line after it only turns color when something real actually cleared the significance bar since then, never just because the price moved.',
+      'The small dots mark flagged moves. The dotted line is where you last left off — the line after it only turns color when something cleared the significance bar since then, never just because the price moved.',
   },
   {
     page: '/watchlist',
@@ -72,28 +72,28 @@ export const TOUR_STEPS: TourStep[] = [
   {
     page: '/clusters',
     selector: '[data-tour="cluster-visual"]',
-    title: 'Real correlation, not sector labels',
+    title: 'Correlation, not sector labels',
     description:
-      'These groups come from real pairwise return correlation on real price history — hover a group to see it up close, click any dot to open that stock.',
+      'These groups come from how closely the stocks’ daily returns correlate — hover a group to see it up close, click any dot to open that stock.',
   },
   {
     page: '/clusters',
     selector: '[data-tour="divergence-list"]',
     title: "Who's drifting right now",
-    description: 'Each group is sorted by how far every member has actually diverged from it today — not just who belongs to it.',
+    description: 'Each group is sorted by how far each member has diverged from it today — not just who belongs to it.',
   },
   {
     page: '/playback',
     selector: '[data-tour="playback-controls"]',
     title: 'Time travel',
     description:
-      'Scrub to any real day, or jump straight to the next real flagged event — reconstructed live from the same event log the digest reads, not a recording.',
+      'Scrub to any past day, or jump to the next flagged move — rebuilt from the same event log the digest reads.',
     optional: 'playback',
   },
   {
     page: '/system',
     selector: '[data-tour="system-page"]',
-    title: 'The honest page',
-    description: 'Real polling intervals, real source disagreements, real data quality — nothing on this page is illustrative.',
+    title: 'System',
+    description: 'What the last ingest did for each stock — scored, skipped for thin history, or failed.',
   },
 ];

@@ -19,8 +19,6 @@ const KIND_DOT_COLOR: Record<string, string> = {
   residual_move: 'var(--unconfirmed)',
 };
 import { classifyFreshness, classifyQuoteQuality } from '../../../worker/freshness';
-import { pollingTierFor } from '../../../worker/polling-tiers';
-import { getWatchlistCounts } from '../../../db/queries/watchlist';
 import { explainWhyQuietForSymbols } from '../../../src/digest/why-quiet';
 
 export const dynamic = 'force-dynamic';
@@ -38,20 +36,18 @@ export default async function SymbolDetailPage({ params }: { params: Promise<{ s
   const meta = await getSymbol(symbol);
   if (!meta) notFound();
 
-  const [candles, events, cluster, watchlistCounts, [quietReason]] = await Promise.all([
+  const [candles, events, cluster, [quietReason]] = await Promise.all([
     getRecentCandles(symbol, 20),
     getRecentEventsForSymbol(symbol, 15),
     getLatestClusterForSymbol(symbol),
-    getWatchlistCounts(),
     explainWhyQuietForSymbols([symbol]),
   ]);
 
   const latest = candles[candles.length - 1];
   const prior = candles[candles.length - 2];
   const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
-  const { intervalMs: expectedIntervalMs } = pollingTierFor(watchlistCounts.get(symbol) ?? 0);
   const now = new Date();
-  const freshness = latest ? classifyFreshness(latest.ts, now, expectedIntervalMs) : null;
+  const freshness = latest ? classifyFreshness(latest.ts, now) : null;
   const quality = latest && freshness ? classifyQuoteQuality(freshness, latest.confirmed) : null;
   const isLowLiquidity =
     quietReason && quietReason.volumeRatio !== null && quietReason.volumeRatio < LOW_LIQUIDITY_THRESHOLD;

@@ -21,62 +21,37 @@ describe('checkFreshness', () => {
 });
 
 describe('classifyFreshness', () => {
-  // Mid-session deliberately: 05:30Z is 11:00 IST on a Wednesday, leaving
-  // 4h30m of open market ahead of it. These cases are about how silence
-  // *during* a session escalates, so they need real open time to elapse —
-  // an asOf pinned to the 15:30 IST close would make every gap below
-  // measure zero open minutes and stay 'live' forever.
-  const asOf = new Date('2026-08-19T05:30:00Z');
-  const minutes = (n: number) => new Date(asOf.getTime() + n * 60 * 1000);
+  // Daily bars are stamped at the 09:15 IST open (03:45Z), as Yahoo does.
+  const wedBar = new Date('2026-08-19T03:45:00Z'); // Wed 19 Aug session
 
-  it('is live within a few missed polls of a hot-tier (5s) symbol', () => {
-    const now = new Date(asOf.getTime() + 10 * 1000); // 2 missed 5s polls
-    expect(classifyFreshness(asOf, now, 5_000)).toBe('live');
+  // The bug this replaced: thresholds were the live worker's polling
+  // cadence, measured from the open stamp, so a bar ingested that evening
+  // already read "unreachable" and the whole watchlist glowed red.
+  it("is live the evening its session's bar is ingested", () => {
+    expect(classifyFreshness(wedBar, new Date('2026-08-19T11:30:00Z'))).toBe('live'); // Wed 17:00 IST
   });
 
-  it('flags a hot-tier symbol unreachable after real silence, not one slow tick', () => {
-    const now = new Date(asOf.getTime() + 110 * 1000); // 22x its 5s cadence
-    expect(classifyFreshness(asOf, now, 5_000)).toBe('unreachable');
+  it('is live during its own session, before the close', () => {
+    expect(classifyFreshness(wedBar, new Date('2026-08-19T06:30:00Z'))).toBe('live');
   });
 
-  it('treats the same absolute gap as routine for a cold-tier (5min) symbol', () => {
-    // 12 minutes silent is alarming for a hot symbol but unremarkable for cold
-    expect(classifyFreshness(asOf, minutes(12), 5 * 60 * 1000)).toBe('live');
+  it("stays live through the next session, whose bar can't exist until it closes", () => {
+    expect(classifyFreshness(wedBar, new Date('2026-08-20T06:30:00Z'))).toBe('live'); // Thu 12:00 IST
+    expect(classifyFreshness(wedBar, new Date('2026-08-20T11:30:00Z'))).toBe('live'); // Thu 17:00 IST, pre-ingest
   });
 
-  it('still eventually flags a cold-tier symbol unreachable given enough silence', () => {
-    expect(classifyFreshness(asOf, minutes(120), 5 * 60 * 1000)).toBe('unreachable');
+  it('turns stale once a further full session closes without a newer bar', () => {
+    expect(classifyFreshness(wedBar, new Date('2026-08-21T11:30:00Z'))).toBe('stale'); // Fri evening
   });
 
-  it('sits in stale between the live and unreachable bands', () => {
-    expect(classifyFreshness(asOf, minutes(20), 5 * 60 * 1000)).toBe('stale');
+  it('turns unreachable after several missed sessions', () => {
+    expect(classifyFreshness(wedBar, new Date('2026-08-26T11:30:00Z'))).toBe('unreachable'); // next Wed
   });
 
-  // The bug this replaced: age was wall-clock, so a Friday close was
-  // "three days silent" by Sunday — hundreds of times any tier's cadence
-  // — and every symbol announced a provider outage every single weekend,
-  // about a feed that was fine and a market that was shut.
-  it('does not age a Friday close over the weekend, when no session has happened', () => {
-    const fridayClose = new Date('2026-09-11T10:00:00Z'); // Fri 15:30 IST
-    const saturday = new Date('2026-09-12T06:30:00Z');
-    const sunday = new Date('2026-09-13T06:30:00Z');
-    expect(classifyFreshness(fridayClose, saturday, 5 * 60 * 1000)).toBe('live');
-    expect(classifyFreshness(fridayClose, sunday, 5 * 60 * 1000)).toBe('live');
-  });
-
-  it('does not age a close overnight either, before the next session opens', () => {
-    const wedClose = new Date('2026-08-19T10:00:00Z'); // Wed 15:30 IST
-    const thursPreOpen = new Date('2026-08-20T03:00:00Z'); // Thu 08:30 IST, pre-market
-    expect(classifyFreshness(wedClose, thursPreOpen, 5 * 60 * 1000)).toBe('live');
-  });
-
-  it('resumes ageing once the next session actually opens', () => {
-    // Same Wednesday close, but now well into Thursday's session — the
-    // market has been open for hours with no new print, which is a real
-    // gap rather than an overnight one.
-    const wedClose = new Date('2026-08-19T10:00:00Z');
-    const thursMidSession = new Date('2026-08-20T06:30:00Z'); // Thu 12:00 IST
-    expect(classifyFreshness(wedClose, thursMidSession, 5 * 60 * 1000)).toBe('unreachable');
+  it('does not age a Friday bar over the weekend', () => {
+    const fridayBar = new Date('2026-09-11T03:45:00Z');
+    expect(classifyFreshness(fridayBar, new Date('2026-09-13T06:30:00Z'))).toBe('live'); // Sunday
+    expect(classifyFreshness(fridayBar, new Date('2026-09-14T06:30:00Z'))).toBe('live'); // Monday mid-session
   });
 });
 

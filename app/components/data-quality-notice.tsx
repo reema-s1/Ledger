@@ -1,6 +1,14 @@
-import type { QuoteQuality } from '../../worker/freshness';
-import { marketOpenMsBetween } from '../../src/lib/time/market-calendar';
-import { formatAge } from '../lib/format';
+import { marketMsSinceSessionClose, SESSION_MS, type QuoteQuality } from '../../worker/freshness';
+import { istDateString } from '../../src/lib/time/market-calendar';
+
+function sessionLabel(asOf: Date): string {
+  return new Date(`${istDateString(asOf)}T00:00:00Z`).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
 
 /**
  * Replaces a generic "stale"/"unconfirmed" badge with a sentence: what's
@@ -11,22 +19,20 @@ import { formatAge } from '../lib/format';
  */
 export function DataQualityNotice({ quality, asOf, now }: { quality: QuoteQuality; asOf: Date; now: Date }) {
   if (quality === 'fresh') return null;
-  // Open-market age, matching what classifyFreshness actually measured to
-  // arrive at this quality — quoting wall-clock age here instead would
-  // read as "3d old" for a Friday close looked at on Monday morning,
-  // which is both alarming and not the number any threshold was judged
-  // against.
-  const age = formatAge(marketOpenMsBetween(asOf, now));
+  // Counted the same way classifyFreshness judged it: open-market time
+  // since that session's close, in whole sessions. Whole sessions because
+  // prices arrive once a day — "6h old" would imply a feed expected to tick.
+  const sessions = Math.max(1, Math.floor(marketMsSinceSessionClose(asOf, now) / SESSION_MS));
+  const behind = `${sessions} trading session${sessions === 1 ? '' : 's'}`;
+  const day = sessionLabel(asOf);
 
   const copy: Record<Exclude<QuoteQuality, 'fresh'>, string> = {
-    stale: `Last confirmed price is ${age} old — polling hasn't caught up to this symbol's usual cadence yet. The number is real and was trustworthy when it printed; it just isn't current-to-the-minute.`,
-    // Deliberately doesn't assert the provider is down, because this can't
-    // tell that apart from an unmodelled NSE holiday or ingestion simply
-    // not having run — all three look identical from here (a session's
-    // worth of open market with no new print). Naming the symptom rather
-    // than guessing at a cause is the honest version; the age shown is
-    // already measured in open-market time, so a weekend never triggers it.
-    unavailable: `No new price through ${age} of open market — well past this symbol's expected refresh interval, not just one slow poll. That usually means the feed has stopped answering, though an unlisted market holiday looks the same from here. Showing the last confirmed price for reference; treat it as informational until it refreshes.`,
+    stale: `Latest price is the ${day} close — ${behind} ${sessions === 1 ? "has" : "have"} closed since without a newer one loaded. The number was right for that day; it just isn't the latest session.`,
+    // Deliberately doesn't assert the provider is down: this can't tell a
+    // failed daily run apart from an unlisted NSE holiday or a suspended
+    // stock — all look identical from here. Naming the symptom is the
+    // honest version.
+    unavailable: `Latest price is the ${day} close, ${behind} behind. The daily update may have failed for this stock, or it may not have traded (an NSE holiday isn't modelled, so it looks the same from here). Shown for reference only.`,
     invalid: `The last print didn't survive two-source reconciliation (sources disagreed beyond tolerance) — recorded for the history, but never used to raise an alert. Don't treat this as a trustworthy current price.`,
   };
 

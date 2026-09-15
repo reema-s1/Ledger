@@ -170,7 +170,7 @@ moved* is worse than "nothing cleared the bar."
 ## Tech
 
 Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL, no ORM ·
-Vercel · GitHub Actions · Vitest (190 tests, no database needed:
+Vercel · GitHub Actions · Vitest (188 tests, no database needed:
 `npx vitest run`) · driver.js for the tour.
 
 The full technical write-up — schema, the significance math, clustering,

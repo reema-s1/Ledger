@@ -9,10 +9,8 @@
 import { getRecentCandles, type CandleRow } from '../../db/queries/candles';
 import { getRecentEventsForSymbol, getEventsSince } from '../../db/queries/events';
 import { getCursorOrDefault } from '../../db/queries/cursors';
-import { getWatchlistCounts } from '../../db/queries/watchlist';
 import { listWatchThresholds } from '../../db/queries/watch-thresholds';
 import { classifyFreshness, classifyQuoteQuality, type QuoteQuality } from '../../worker/freshness';
-import { pollingTierFor } from '../../worker/polling-tiers';
 
 const CANDLE_WINDOW_DAYS = 130;
 const RECENT_EVENTS_LIMIT = 40;
@@ -48,7 +46,7 @@ export async function buildWatchlistRows(
   userId: number,
   symbols: { symbol: string; name: string; sector: string }[],
 ): Promise<WatchlistRow[]> {
-  const [watcherCounts, thresholds] = await Promise.all([getWatchlistCounts(), listWatchThresholds(userId)]);
+  const thresholds = await listWatchThresholds(userId);
 
   return Promise.all(
     symbols.map(async (s): Promise<WatchlistRow> => {
@@ -95,8 +93,7 @@ export async function buildWatchlistRows(
       significantSinceCursor = since.some((e) => MOVE_KINDS.has(e.kind));
 
       const closes = candles.map((c) => c.c);
-      const { intervalMs } = pollingTierFor(watcherCounts.get(s.symbol) ?? 0);
-      const quality = latest ? classifyQuoteQuality(classifyFreshness(latest.ts, new Date(), intervalMs), latest.confirmed) : null;
+      const quality = latest ? classifyQuoteQuality(classifyFreshness(latest.ts, new Date()), latest.confirmed) : null;
 
       const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
       const personalThresholdPct = thresholds.get(s.symbol) ?? null;

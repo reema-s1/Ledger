@@ -8,11 +8,10 @@ const QUALITY_COLOR: Record<QuoteQuality, string> = {
 };
 
 /**
- * A small heartbeat: pulses only when the feed is actually live and on
- * cadence ('fresh') — the moment a symbol crosses its own expected
- * refresh interval (worker/freshness.ts's classifyFreshness, already
- * scaled per-symbol, not a fixed global timeout), the dot stops pulsing
- * and changes color, itself the signal that something needs a look.
+ * A small heartbeat: pulses only while the latest bar is current
+ * ('fresh') — once a full trading session passes without a newer one
+ * (worker/freshness.ts's classifyFreshness), the dot stops pulsing and
+ * changes color, itself the signal that something needs a look.
  */
 export function HeartbeatDot({ quality }: { quality: QuoteQuality }) {
   const color = QUALITY_COLOR[quality];

@@ -6,7 +6,13 @@
  * render a stale number as live.
  */
 
-import { marketOpenMsBetween } from '../src/lib/time/market-calendar';
+import {
+  istDateString,
+  marketOpenMsBetween,
+  sessionCloseTs,
+  MARKET_CLOSE_MINUTES_OF_DAY,
+  MARKET_OPEN_MINUTES_OF_DAY,
+} from '../src/lib/time/market-calendar';
 
 export type FreshnessState = 'live' | 'stale';
 
@@ -19,35 +25,45 @@ export const DEFAULT_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 export type FreshnessLevel = 'live' | 'stale' | 'unreachable';
 
-/** A missed poll or two past a symbol's own cadence; not yet worth alarming over. */
-export const STALE_MULTIPLIER = 3;
-/** Far enough past cadence that a single slow tick can't explain it — the source has stopped answering. */
-export const UNREACHABLE_MULTIPLIER = 20;
+/** One NSE session, 09:15-15:30 IST, as milliseconds of open market. */
+export const SESSION_MS = (MARKET_CLOSE_MINUTES_OF_DAY - MARKET_OPEN_MINUTES_OF_DAY) * 60_000;
+
+/** Up to this many further sessions without a newer candle reads 'stale' rather than 'unreachable'. */
+const STALE_SESSIONS = 3;
 
 /**
- * checkFreshness against one flat threshold treats a cold-tier symbol
- * (polled every 5 min) as perpetually on the edge of "stale" while a
- * hot-tier symbol (polled every 5s) could go silent for 5 minutes -
- * 60x its own cadence - before anything flags it. This scales the
- * threshold to the symbol's own expected polling interval instead, and
- * adds a third state for "the source has been unreachable for a while,"
- * distinct from an ordinary between-polls gap.
+ * Open-market time elapsed since a daily candle's session *closed*.
  *
- * Age is measured in *open-market* time (marketOpenMsBetween), not wall
- * clock. Measuring wall clock meant every symbol tipped into
- * 'unreachable' over every weekend: Friday's close is three calendar
- * days old by Monday morning, which is hundreds of times any tier's
- * cadence, so the UI announced a data-provider outage every Saturday
- * about a feed that was working perfectly and a market that was shut.
- * Since a session's closing price genuinely *is* the most recent real
- * price until the next open, an overnight or weekend gap now costs
- * nothing, while silence during an actual session still escalates on
- * exactly the same multiples it did before.
+ * Every candle is one daily bar, and a bar covers its session through
+ * the close — but Yahoo stamps it at the 09:15 IST open. Measuring from
+ * that stamp counted the whole trading day the bar already describes as
+ * silence, so a candle ingested at 17:00 read "6h of open market with no
+ * new price" the moment it arrived.
  */
-export function classifyFreshness(asOf: Date, now: Date, expectedIntervalMs: number): FreshnessLevel {
-  const ageMs = marketOpenMsBetween(asOf, now);
-  if (ageMs <= expectedIntervalMs * STALE_MULTIPLIER) return 'live';
-  if (ageMs <= expectedIntervalMs * UNREACHABLE_MULTIPLIER) return 'stale';
+export function marketMsSinceSessionClose(asOf: Date, now: Date): number {
+  const close = sessionCloseTs(istDateString(asOf));
+  return close.getTime() >= now.getTime() ? 0 : marketOpenMsBetween(close, now);
+}
+
+/**
+ * How current a daily candle is, measured in trading sessions.
+ *
+ * 'live' while it's the newest bar that could exist yet: the next
+ * session's bar can't be ingested until that session has closed, so up
+ * to one further full session of open market is simply "not yet", not
+ * "missing". 'stale' once a whole further session has passed without a
+ * newer bar (a missed daily run), 'unreachable' after several.
+ *
+ * This replaced thresholds scaled to the worker's 5s/30s/5min polling
+ * tiers. Those were built for continuous polling; with data arriving
+ * once a day they flagged every symbol unreachable about 100 minutes into
+ * each morning's session and kept it red until the evening run. Weekends
+ * and nights cost nothing either way, since only open-market time counts.
+ */
+export function classifyFreshness(asOf: Date, now: Date): FreshnessLevel {
+  const ageMs = marketMsSinceSessionClose(asOf, now);
+  if (ageMs <= SESSION_MS) return 'live';
+  if (ageMs <= SESSION_MS * STALE_SESSIONS) return 'stale';
   return 'unreachable';
 }
 
