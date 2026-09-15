@@ -82,3 +82,13 @@ describe('buildStructuredExplanation — locale (item 23)', () => {
     expect(lines[0]!.label).toBe('This move');
   });
 });
+
+describe('buildStructuredExplanation — unnamed cluster', () => {
+  it('translates the stand-in cluster phrase instead of leaving English inside a Hindi line', () => {
+    const hi = buildStructuredExplanation(decomposition(), undefined, 'hi');
+    const en = buildStructuredExplanation(decomposition(), undefined, 'en');
+    expect(hi[1]!.text).toContain('इसका समूह');
+    expect(hi[1]!.text).not.toContain('its cluster');
+    expect(en[1]!.text).toContain('its cluster');
+  });
+});

@@ -31,6 +31,8 @@ interface Phrases {
     volume: string;
   };
   market: string;
+  /** Stand-in when the caller has no named cluster to show. Lives in the phrase table because it's words, not a label — hardcoding it in English left "its cluster" in the middle of an otherwise Hindi sentence. */
+  cluster: string;
   volumeUnconfirmed: string;
   volumeNormalSuffix: string;
   zSuffix: string;
@@ -48,6 +50,7 @@ const PHRASES: Record<ExplanationLocale, Phrases> = {
       volume: 'Volume',
     },
     market: 'market',
+    cluster: 'its cluster',
     volumeUnconfirmed: 'not enough history to confirm',
     volumeNormalSuffix: 'x normal',
     zSuffix: "x this stock's normal daily range",
@@ -63,6 +66,7 @@ const PHRASES: Record<ExplanationLocale, Phrases> = {
       volume: 'कारोबार की मात्रा',
     },
     market: 'बाज़ार',
+    cluster: 'इसका समूह',
     volumeUnconfirmed: 'पुष्टि के लिए पर्याप्त इतिहास नहीं',
     volumeNormalSuffix: 'x सामान्य',
     zSuffix: 'x इस स्टॉक की सामान्य दैनिक सीमा',
@@ -101,17 +105,18 @@ export interface StructuredExplanationLine {
  */
 export function buildStructuredExplanation(
   d: Decomposition,
-  clusterLabel = 'its cluster',
+  clusterLabel: string | undefined = undefined,
   locale: ExplanationLocale = 'en',
 ): StructuredExplanationLine[] {
   const p = PHRASES[locale];
+  const cluster = clusterLabel ?? p.cluster;
   const zAbs = Math.abs(d.residualZ).toFixed(1);
 
   return [
     { label: p.labels.move, text: describeMove(d.observedReturn, locale) },
     {
       label: p.labels.explainedBy,
-      text: `${p.market} ${describeMove(d.indexReturn, locale)}, ${clusterLabel} ${describeMove(d.clusterReturn, locale)}`,
+      text: `${p.market} ${describeMove(d.indexReturn, locale)}, ${cluster} ${describeMove(d.clusterReturn, locale)}`,
     },
     {
       label: p.labels.leftover,
