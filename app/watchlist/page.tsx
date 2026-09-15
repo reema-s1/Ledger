@@ -28,8 +28,9 @@ export default async function WatchlistPage() {
     <main className="container" style={{ paddingTop: 40, paddingBottom: 80 }}>
       <h1 style={{ fontSize: 24, marginBottom: 8 }}>Watchlist</h1>
       <p style={{ color: 'var(--ink-muted)', fontSize: 14, marginTop: 0, marginBottom: 32 }}>
-        {current.length} {current.length === 1 ? 'symbol' : 'symbols'} tracked. The dotted line on each chart marks
-        where you last left off; the line after it is colored only when the move since then actually cleared the
+        {current.length} {current.length === 1 ? 'symbol' : 'symbols'} tracked. Dots on each chart mark days a real
+        move was flagged. The dotted vertical line is where you last left off (at the far left until you mark
+        something seen), and the line after it is colored only when a move since then actually cleared the
         significance bar.
       </p>
       <WatchlistTable rows={rows} available={available} />

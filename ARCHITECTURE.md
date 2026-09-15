@@ -804,20 +804,55 @@ yet" for the one ticker Yahoo can't resolve).
 
 ## Deployment
 
-Three services, matching the brief: **Vercel** for the Next.js app (read
-path + frontend), **Railway** for the worker (long-lived, not a request/
-response function — can't run on Vercel), **Neon** for Postgres. Both
-`vercel.json` (build command) and `railway.json` (start command) are
-already in the repo so each platform's "deploy from this repo" flow needs
-no manual dashboard configuration beyond environment variables.
+**Vercel** for the Next.js app (read path + frontend), **Neon** for
+Postgres, and a **daily scheduled GitHub Action**
+(`.github/workflows/daily-ingest.yml`) for ingestion. The standalone
+long-lived worker (`npm run worker`) still exists, still works, and still
+has a ready `railway.json` — it's just no longer what runs in production
+day to day.
+
+**Why ingestion moved off an always-on worker.** The worker polls every
+5s/30s/5min, forever. That has two costs that don't show up until you're
+on free tiers: Railway bills for the process continuously, even though
+there's nothing to ingest outside the ~6h15m NSE session; and — less
+obviously — Neon's free tier only scales compute to zero after ~5 minutes
+with no connections, so a worker holding a connection pool open around
+the clock keeps the database permanently awake. The daily job connects,
+runs `npm run backfill` in `DATA_MODE=live` (real Yahoo sessions newer
+than the `candles` watermark), grades past alerts, recomputes clusters on
+Sundays, and exits. Neon sleeps again; Railway isn't involved; the
+public repo's Actions minutes are free.
+
+What that costs, honestly: sub-minute tiered polling isn't running in
+production. The tiered-polling code, its tests, and the `/system` page
+that shows each symbol's tier are all unchanged and run locally. The
+visible difference is small in practice — NSE is closed most hours of
+most days, and the daily job lands each session's real close about 90
+minutes after the bell. For a window that genuinely needs live ticks
+(a live demo during market hours), the worker can be run on demand —
+from a laptop pointed at the same Neon database works, since the Vercel
+app reads whatever lands there — and the Railway service can be
+redeployed from `railway.json` without any other change.
+
+Because `ingestSymbol` backfills from the watermark rather than from
+"today", missed runs self-heal on the next one, and re-running the job is
+a no-op (every write is `ON CONFLICT`-idempotent). Running the job for
+real also caught a bug before it shipped: `LTIM` has no resolvable Yahoo
+ticker, and its 404 used to abort the whole backfill — and since the loop
+is alphabetical, every symbol after it silently never ingested. The
+script now isolates failures per symbol (the long-running worker already
+did, via `IntervalRunner`) and only exits non-zero when every symbol
+fails, so one permanently dead ticker doesn't turn every scheduled run
+red.
 
 `DATA_MODE=replay` on the deployed demo, deliberately — stated in
 `.env.example` — so the URL always shows a living market regardless of
 real NSE hours. That's a design choice for a demo, not an apology.
 
 **The deployment model, named as a constraint, not left implicit.** This
-is one Railway worker instance plus one durable Postgres (Neon). What
-that assumes, and what would actually break it:
+is one ingestion process at a time (the daily job, or the worker when run
+on demand) plus one durable Postgres (Neon). What that assumes, and what
+would actually break it:
 
 - **Durable storage is load-bearing.** Every stateful thing — candles,
   events, cursors, clusters — lives in Postgres, not in the worker
@@ -867,16 +902,24 @@ DATABASE_URL="<neon-pooled-url>" DATA_MODE=replay npm run clusters:recompute
 DATABASE_URL="<neon-pooled-url>" DATA_MODE=replay npm run seed-demo-user
 ```
 
-**3. Railway (worker)** — new project from this repo; it reads
-`railway.json` and runs `npm run worker` automatically. Set `DATABASE_URL`
-(the Neon **direct**, non-pooled connection string — a long-lived worker
-holding a persistent connection doesn't need Vercel's connection pooler)
-and `DATA_MODE=replay` as environment variables. Let it run for a minute
-after first deploy so it backfills events before anyone opens the app.
+**3. Daily ingestion (GitHub Actions)** — add a repository secret named
+`DATABASE_URL` (Settings → Secrets and variables → Actions) with the Neon
+connection string. The workflow then runs daily at 11:30 UTC (17:00 IST,
+after the close); trigger it once by hand from Actions → Daily ingest →
+Run workflow to confirm it goes green. A healthy run shows each symbol's
+session count and one expected `LTIM: FAILED — Yahoo Finance HTTP 404`.
 
 **4. Vercel (app)** — import this repo; it reads `vercel.json` and runs
 `npm run seed && next build` automatically. Set `DATABASE_URL` (the Neon
-**pooled** string this time) and `DATA_MODE=replay`.
+**pooled** string) and `DATA_MODE=replay`.
+
+**Optional — Railway (on-demand live worker).** Not needed day to day. If
+a window genuinely needs live polling, a Railway project from this repo
+reads `railway.json` and runs the worker; set `DATABASE_URL` (Neon's
+**direct**, non-pooled string — a long-lived process holding a persistent
+connection doesn't need a pooler) and `DATA_MODE=live`. Remove the
+deployment afterward rather than the service, so it can be redeployed
+with one click and doesn't keep billing or keep Neon awake in between.
 
 ### Growth path — what actually changes under real load
 
@@ -892,11 +935,9 @@ shows up, and why that piece specifically:
 | `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design (Section 2's trigger) already makes partitioning straightforward — nothing rewrites old partitions |
 | Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path (Section 4) and cached; the next step is making the *recompute itself* incremental, not moving it |
 
-### What's not done
+### Current state
 
-Deploying the three services live requires accounts and credentials this
-environment doesn't have (no valid GitHub token, no Vercel/Railway/Neon
-login) — the steps above are written to be copy-paste-ready once you're
-authenticated, not executed yet. Everything else on this list — configs,
-the filesystem fix, the exact env vars — was gated on code, not
-credentials, so it's already done.
+Live: the Vercel app at ledger-diff.vercel.app, Neon Postgres, and the
+daily ingest workflow (verified with a manual run). The Railway service
+is kept configured for on-demand live polling but isn't required for
+anything the deployed app shows — see above.

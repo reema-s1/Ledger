@@ -2,8 +2,11 @@
  * `npm run worker`
  *
  * The standalone long-lived ingestion process — not a Next.js route, per
- * the brief. Runs independently of the web app; in production this is
- * the Railway service, deployed separately from the Vercel frontend.
+ * the brief. Runs independently of the web app. Day-to-day production
+ * ingestion is the daily GitHub Action (.github/workflows/daily-ingest.yml)
+ * instead, since an always-on poller bills continuously and keeps Neon
+ * awake; this runs locally, or on Railway (railway.json) when a window
+ * genuinely needs live polling.
  */
 
 import 'dotenv/config';

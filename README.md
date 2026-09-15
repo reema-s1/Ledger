@@ -1,214 +1,200 @@
 # Ledger
 
-Most watchlists show current state and leave you to work out what
-changed. Ledger shows the diff.
+Most watchlists show you the current price and leave you to work out what
+changed. Ledger shows you **what changed since you last looked** — and
+only the changes that actually mean something.
 
-**Live demo:** [ledger-diff.vercel.app](https://ledger-diff.vercel.app) · **Try it:** click "Try as Guest" — no sign-up, instant seeded account.
+**Live demo:** [ledger-diff.vercel.app](https://ledger-diff.vercel.app) · click **Try as Guest** — no sign-up, you get a ready-made watchlist and a short guided tour.
 
 ![Landing screen](docs/screenshots/landing.png)
 
-## The idea, in two bets
+## The two ideas
 
-**1. Read-cursor model.** Every symbol writes into an append-only event
-log; every user holds a per-symbol read offset. "What's new" is
-`log[since your offset:]`, computed on read — not fetched-as-state and
-diffed in the UI. Reading advances the cursor explicitly, never
-implicitly, so multi-device sync isn't a feature bolted on afterward —
-it falls straight out of the data model.
+**1. A bookmark, not a snapshot.** Everything that happens to a stock is
+written to a permanent, append-only log. You hold a bookmark per stock
+saying how far you've read. "What's new" is simply everything after your
+bookmark. Marking something seen moves the bookmark forward — and since
+bookmarks only ever move forward, your phone and laptop can never disagree
+about what you've already read.
 
-**2. Structural break, not price move.** A 12-stock watchlist is usually
-three or four correlated bets, not twelve independent ones. A move fully
-explained by the market or the sector isn't news — the unexplained
-residual is. Most days, nothing clears that bar, and that's the product
-working, not a fallback screen.
+**2. "Moved" isn't the same as "mattered".** If the whole market falls 2%
+and your stock falls 2%, nothing happened to *your stock*. Ledger subtracts
+what the market and the stock's peer group already explain, and only flags
+what's left over — and only when that leftover is unusual *for this
+particular stock*, confirmed by trading volume. Most days nothing clears
+the bar, and that's the product working.
 
-## What it actually does
+## How it fits together
 
+```mermaid
+flowchart LR
+    Y["Yahoo Finance<br/>real NSE prices"]
+
+    subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
+        B["Backfill new sessions"]
+        S["Significance engine<br/>market + peer group removed"]
+        R["Grade past alerts"]
+        C["Recompute clusters<br/>Sundays"]
+    end
+
+    subgraph db["Postgres · Neon"]
+        E[("Event log<br/>append-only")]
+        K[("Candles")]
+        U[("Read bookmarks<br/>per user, per stock")]
+        G[("Clusters")]
+    end
+
+    subgraph app["Next.js app · Vercel"]
+        P["Digest · Watchlist · Clusters<br/>Playback · System · Symbol"]
+        A["Ask the log"]
+    end
+
+    Y --> B --> K
+    B --> S --> E
+    R --> E
+    C --> G
+    E --> P
+    K --> P
+    G --> P
+    U <--> P
+    E --> A
+    P --> Browser(("You"))
+    A --> Browser
+
+    O["OpenRouter + Google News<br/>optional, off by default"] -.-> A
+    W["Live worker<br/>on demand only"] -.-> K
+```
+
+Every stock is ingested and scored **once**, no matter how many people
+watch it. The only thing that grows per user is a few tiny bookmark rows —
+so adding users barely touches the cost of running it.
+
+**How a price becomes a card:** new day's candle → subtract the market's
+and the peer group's move → compare the leftover to this stock's own
+normal range (a z-score) → check volume backs it up → if it clears the bar,
+write one event with a plain-English sentence attached → it shows up in
+your digest until you mark it seen.
+
+## What's in it
+
+### Digest — "What's new"
 ![The digest](docs/screenshots/digest.png)
 
-Every card leads with a sentence, not a ticker and a percentage —
-toggle to **Detailed** and see the real math behind it (residual after
-subtracting market and cluster movement, confirmed by volume). Click
-**Mark seen** and it's a real cursor acknowledgment sent to the server,
-not a local checkbox — two devices can never un-read each other.
+- Every card leads with a **sentence**, not a ticker and a percentage.
+  **Simple** mode keeps it plain; **Detailed** shows the real numbers.
+- Four always-visible metrics per card (volume, move vs. peers, z-score,
+  signal type), and a **breakdown** you can read in English or Hindi —
+  only the words are translated, never the numbers.
+- Grouped by recency — **Today**, **This week**, **Earlier**. Being away
+  four months gives you one line per stock, not thousands of events.
+- **Mark seen** is a real bookmark update on the server, not a checkbox.
+- Old alerts get **graded afterwards** — "flagged 12 days ago, fully
+  reverted since" — plus a running score of how past alerts held up.
+- When nothing's flagged, **Show me anyway** runs the real math live and
+  shows how close each stock came, so "all quiet" is provable, not claimed.
+- **Find possible explanation** (optional) searches real, dated news for a
+  flagged move and summarizes only what those articles say — always
+  labeled *unverified*, with the source link.
 
-Not every big move is news, and the last 20 alerts get graded after the
-fact — "flagged 172 days ago, still diverged" — so the product keeps
-score on itself instead of leaving stale alerts sitting there forever.
-Below that, **Ask the log** answers plain-English questions ("why is my
-portfolio red today?") by retrieving straight from the real event log —
-no LLM call, no hallucination risk, every answer traceable to its source:
+### Ask the log
+![Ask the log](docs/screenshots/ask-the-log.png)
 
-![Ask the log, resolution clauses, and the accountability stat line](docs/screenshots/ask-the-log.png)
+Ask "why is my portfolio red today?" and get an answer built from the real
+event log — every sentence traces back to a stored event, with source
+links underneath. Optionally (`ENABLE_ASK_LOG_LLM=1`), an LLM helps
+*understand* the question and *rephrase* the answer — but it never decides
+what the facts are, and a rephrase is thrown away if it contains any number
+or stock that wasn't in the original answer.
 
-A watchlist is a real, personal list — add or remove any symbol, any time:
-
+### Watchlist
 ![Watchlist](docs/screenshots/watchlist.png)
 
-And the real thesis: symbols aren't independent. Correlation clustering
-groups the ones that actually move together, with the real numbers one
-click away on "Why grouped?":
+- **Search to add** by ticker or company name — "tata" finds Tata Power.
+- Per stock: price, today's move (highlighted when it genuinely cleared the
+  bar, not just when it's red), a chart, volume, and a price range labeled
+  by how much history is actually loaded.
+- The chart's **dots** mark days a real move was flagged; the **dotted
+  line** is your bookmark, and the line after it only turns color when
+  something significant happened since.
+- **Personal reminders** — "tell me if this moves more than 2%" — shown in
+  the top-right bell on every page, styled separately so they never look
+  like the engine's own judgment.
+- Add and remove both have **undo**.
 
+### Clusters
 ![Correlation clusters](docs/screenshots/clusters.png)
 
-**Playback** is time-travel for the watchlist — reconstructs the digest
-and cluster grouping exactly as they looked on any earlier day, live
-from the event log, not a separate recording:
+Stocks grouped by how they **actually move together** over the past 90
+sessions — not by sector labels. Each group lists its members by how far
+they've drifted from the group today, and **Why grouped?** shows the real
+correlation numbers. Falls back to sector grouping when there isn't enough
+history yet.
 
-![Playback scrubber](docs/screenshots/playback.png)
+### Playback
+![Playback](docs/screenshots/playback.png)
 
-## Under the hood
+Rewind to any past day and see exactly what the digest and clusters looked
+like — rebuilt live from the event log, not a recording. Buttons to step a
+day forward or jump straight to the next real flagged move.
 
-Next.js (App Router, TS) + Postgres (plain SQL, no ORM) + a standalone
-long-lived Node worker for ingestion — two-source conflict detection,
-corporate-action adjustment (splits/bonuses), tiered polling,
-retrospective alert grading. A live telemetry page at `/system` shows the
-real polling tier and interval per symbol, every source disagreement the
-worker has actually caught, and the trade-offs behind each — not
-illustrative numbers, the running system's own state.
-
-Every symbol's events, candles, and clusters are computed once and
-shared by every user watching it — a stock followed by a hundred
-watchlists is still ingested once. The only thing that grows per user is
-a handful of tiny read-cursor rows, so watchlist size and user count
-barely touch the cost path.
+### Also
+- **Symbol page** — a stock's own events, its cluster, and an honest data
+  status: fresh, stale, unavailable, or failed a cross-check — with a
+  heartbeat dot that stops pulsing when the feed goes quiet, and a separate
+  low-liquidity tag on thin-volume days. Staleness counts only
+  **market-open hours**, so a Friday close isn't "3 days stale" on Monday.
+- **System page** — the real polling tier per stock, every price
+  disagreement ever caught, and each stock's latest ingestion outcome.
+- **Guided tour**, light/dark theme, and stock splits handled correctly
+  (a real 5:1 KOTAKBANK split doesn't show up as an 80% crash).
 
 ## Data, honestly
 
-- **Historical candles — real.** ~220 trading sessions per symbol
-  (40 NSE stocks + NIFTY), pulled once from Yahoo Finance's `.NS`
-  endpoint (`npm run fetch-real-history`) and committed as a static
-  snapshot — correlation clustering runs on real sector co-movement, not
-  planted correlation.
-- **Corporate actions — real, and actually triggered.** The same fetch
-  pulls real split/bonus events where Yahoo has them; the window was
-  deliberately widened (past the ~130 sessions a demo strictly needs) to
-  land a real one inside it — KOTAKBANK's real 5:1 split on 2026-01-14.
-  Backfilling against it produces exactly one `corporate_action` event
-  and zero false price-move events that day (verified — see
-  `ARCHITECTURE.md` Section 5), so the adjustment path is exercised
-  against real data, not just unit-tested against a synthetic fixture.
-  Running the retrospective grading job for real afterward
-  (`npm run resolve-alerts`) graded 19 flagged moves: 8 held, 1 partially
-  reverted, 10 reverted.
-- **Live quotes — real, single source.** `DATA_MODE` still defaults to
-  `replay` for demo-safety, but setting it to `live` pulls real current
-  prices from the same Yahoo Finance endpoint as the historical data
-  (`src/lib/quotes/yahoo-live-fetcher.ts`), not a stub.
-- **Two-source conflict detection — the logic is real and tested, the
-  second source isn't independent yet.** In both replay and live mode
-  the "secondary" source is the same primary quote wrapped with jitter
-  (replay also injects one deliberate disagreement), so
-  `reconcileQuotes` has something real to catch. A genuinely independent
-  second live vendor is the one honest gap left: NSE's own site blocks
-  non-browser traffic (confirmed with a 403, even with a proper session
-  handshake), and no other free source with real NSE coverage was
-  reachable. The reconciliation algorithm itself doesn't change if a
-  real second vendor is added later — only `worker/sources.ts` would.
-- **Replay mode still exists, on purpose** — for deterministic
-  demo-safety when markets are closed — but it now replays the real
-  historical data above, deterministically, not a synthetic generator.
-  The synthetic generator (`src/seed/generate.ts`) is untouched as an
-  automatic fallback: delete `data/real-nse-history.json` and `npm run
-  seed` reverts to it instantly, loudly logging that it did.
+| | Status |
+|---|---|
+| Historical prices | **Real** — ~220 NSE sessions for 39 stocks + NIFTY, from Yahoo Finance |
+| Daily updates | **Real** — a GitHub Action pulls each new session after the close |
+| Stock splits | **Real** — KOTAKBANK's 5:1 split on 2026-01-14 is in the data and handled |
+| Price cross-check | **Logic real, second source isn't** — no free independent NSE source exists, so it's checked against a jittered copy (plus one planted disagreement to catch) |
+| Live, second-by-second polling | **Built, not running in production** — see below |
 
-## Where an LLM is used — and where it deliberately isn't
+**Why ingestion runs daily, not live.** The app ships with a live worker
+that polls every 5s–5min. Left running 24/7 it billed continuously for a
+market that's closed most hours, and kept the free-tier database from ever
+sleeping. A once-a-day job lands every session's real close about 90
+minutes after the bell for free. The live worker still works — run
+`npm run worker` locally, or redeploy it from `railway.json` for a window
+that genuinely needs live ticks.
 
-An LLM was considered and ruled out for clustering (real correlation math
-is already fully explainable — an LLM would make it opaque and
-non-deterministic for no benefit) and for price prediction (no free,
-validated model exists for NSE-specific forecasting, and an unvalidated
-prediction undermines the one thing this product is actually trying to
-be trustworthy about).
+**Where an LLM is used.** Only in two optional, off-by-default features
+(news explanation, Ask the log assist) — and never to decide what's
+significant, never to predict prices, and never as the only source of an
+answer. Clustering and significance are plain, inspectable statistics on
+purpose: a confidently wrong answer about *why your money moved* is worse
+than an honest "nothing cleared the bar."
 
-**"Find possible explanation,"** an on-demand button on a flagged move's
-card (off by default — `ENABLE_EXPLANATION_LOOKUP=1`). Clicking it
-searches real, dated news for that symbol (Google News RSS, no API key),
-and — only if something plausibly relevant turns up — asks an LLM
-(OpenRouter, a free-tier model) to summarize *only* what those articles
-say, under a strict instruction never to add outside knowledge or
-speculate beyond them. If nothing relevant is found, the LLM is never
-even called. The result is stored separately from the event's real
-explanation (its own table, never touching `events`), and is always
-shown as a visually secondary, explicitly labeled **"Possible
-explanation (unverified)"** block with a source link — never styled or
-worded to look as certain as the deterministic significance math above
-it.
+## Known limitations
 
-**Ask the log** stays retrieval-only for its actual answer — every
-sentence is still an `explanation` string the significance engine
-already generated, never newly written text, exactly as before. Two
-optional layers can assist around that core, both off by default
-(`ENABLE_ASK_LOG_LLM=1`, needs the same `OPENROUTER_API_KEY`), and
-neither is ever the only path to an answer:
+- **NSE holidays aren't modeled** — only Mon–Fri, 09:15–15:30 IST.
+- **Login is a stub** — passwords are hashed, but not to production
+  standards (no per-user salt, no rate limiting). It exists so two tabs can
+  share one account and show bookmark sync.
+- **Z-scores are relative to each stock's own recent history**, so they
+  rank what deserves attention — they aren't comparable volatility figures
+  across stocks.
+- **One ingestion process at a time.** Every write is idempotent, so a
+  second one wouldn't corrupt anything, but scaling to thousands of stocks
+  means splitting stocks across workers.
 
-- Every question, not only ones the deterministic regex parser came up
-  empty on, also gets parsed by an LLM — a substring match can land
-  confidently on the *wrong* symbol or sentiment just as easily as it
-  can miss one, so the LLM's read fully replaces the regex's whenever it
-  succeeds, constrained to only pick a symbol that's actually on the
-  watchlist (re-validated after the fact, never trusted on the model's
-  word alone — a bad answer can only fall back to no symbol, never the
-  wrong one).
-- The deterministic answer can optionally be rephrased into more natural
-  prose. Before that rephrase is ever shown, `isGrounded` (src/lib/
-  ask-log.ts) checks that every number and every stock symbol in it
-  already appeared in the original, unrephrased answer — a rephrase is
-  free to reorder or simplify, never to introduce a number or symbol
-  that wasn't already there. Anything that fails this check, or any
-  failure in the call itself, silently falls back to the original text.
+## Tech
 
-In both features the significance engine remains the trusted, certain
-core; an LLM is only ever a dismissible, verified, clearly-secondary
-layer on top of something already computed deterministically — never a
-new source of facts of its own.
+Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL, no ORM ·
+Vercel · GitHub Actions · Vitest (181 tests, no database needed:
+`npx vitest run`) · driver.js for the tour.
 
-## Known limitations, stated plainly
-
-- **Statistics are observation-based, not standardized.** A residual
-  z-score is computed against this stock's own rolling window (default
-  60 sessions), not a textbook "20-day" or "52-week" figure — and since
-  hot/warm/cold symbols poll at different intervals (Section 5), it's a
-  *prioritization* heuristic ("does this deserve attention relative to
-  its own recent history"), not a volatility measure that's safe to
-  compare across symbols.
-- **NSE holidays and early closes aren't modeled** — only the weekly
-  Mon-Fri, 09:15-15:30 IST calendar (`src/lib/time/market-calendar.ts`).
-  A real holiday table is a follow-up, not a hidden gap.
-- **`user_id` as a query param stands in for real session auth** — there's
-  no login, no password, no per-request identity check. Fine for a single
-  seeded demo user; a real deployment needs actual auth before this scales
-  past one person.
-- **The worker is one long-lived process, not a fleet.** Every write it
-  makes is idempotent (unique constraints + `ON CONFLICT`), so running a
-  second instance wouldn't corrupt anything — it would just poll the same
-  vendor twice as often for no benefit. Scaling ingestion further means
-  sharding symbols across workers, not just adding replicas.
-- **No extra event-dedup/escalation layer beyond what the schema already
-  guarantees.** A `(symbol, ts, kind)` unique constraint means at most one
-  significance event per symbol per session, and the digest (Section 6)
-  already narrates a multi-day continuing move as one episode rather than
-  a fresh card per day — so a suppression/escalation layer on top (the
-  kind a tick-by-tick alerting system needs) would be solving a problem
-  this daily-bar architecture doesn't have.
-
-Full growth-path (what changes under real load) and every verified cursor
-edge case are in `ARCHITECTURE.md`'s Deployment and Section 6.
-
-## Out of scope, on purpose
-
-Real session auth/multi-user login, a genuinely independent second live
-vendor (NSE's own site blocks non-browser traffic — confirmed, not just
-assumed), push/websocket delivery (the digest is pull-based by design —
-cursors are what make "what's new" a read-time query instead of a
-push subscription), and horizontal autoscaling of the worker. None of
-these are missing by oversight — each is a deliberate line, and the
-reasoning for each is in `ARCHITECTURE.md`.
-
-Full technical write-up (schema, significance engine, clustering math,
-resilience cases, deployment) is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-129 tests across 16 files (`npx vitest run`) — pure-function unit tests,
-no DB required.
+The full technical write-up — schema, the significance math, clustering,
+every failure mode and scaling path — is in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Run it locally
 
@@ -217,13 +203,10 @@ npm install && cp .env.example .env
 docker compose up -d db && npm run db:migrate
 npm run seed && npm run sync-symbols && npm run sync-corporate-actions \
   && npm run clusters:recompute && npm run seed-demo-user
-npm run backfill    # deterministic: ingests every seeded session in one pass, no timing guesswork
+npm run backfill    # ingests every session in one pass
 npm run dev
 ```
 
-`data/real-nse-history.json` is committed, so `npm run seed` uses real
-data out of the box — `npm run fetch-real-history` only needs running
-again to refresh the window.
-
-Full setup notes, troubleshooting, and a click-through feature checklist:
-[`LOCAL.md`](LOCAL.md).
+Real price history is committed, so this uses real data out of the box.
+Optional features and flags are listed in `.env.example`; setup notes and
+troubleshooting are in [`LOCAL.md`](LOCAL.md).
