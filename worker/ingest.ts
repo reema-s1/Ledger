@@ -23,7 +23,7 @@
 import type { Sources } from './sources';
 import { getDataMode } from '../src/lib/data-mode';
 import { adjustBarsForCorporateActions, isExDate, type CorporateAction, type RawBar } from './corporate-actions';
-import { reconcileQuotes, type SourceQuote } from './reconcile';
+import { reconcileQuotes, RECONCILE_TOLERANCE, type SourceQuote } from './reconcile';
 import { checkForResolution } from './stale-alerts';
 import { alignBars, computeClusterMeanReturns, restrictToSharedDates } from './aggregate';
 import { listCorporateActions, type CorporateActionRow } from '../db/queries/corporate-actions';
@@ -48,7 +48,6 @@ import type { Candle } from '../src/lib/quotes/types';
 // before the dataset's tail) actually falls inside the window ingestion
 // looks at, instead of existing in the fetched data but never being seen.
 const HISTORY_DAYS = 220;
-const RECONCILE_TOLERANCE = 0.01; // 1% — beyond this, two sources count as disagreeing
 // How far back to look before emitting a new reassurance card for a
 // symbol — a multi-day market-wide dip shouldn't produce a near-identical
 // "the market did this" card every single day.

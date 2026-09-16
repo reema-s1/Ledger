@@ -88,11 +88,14 @@ export function DigestCard({
   item,
   showExplain = false,
   showAck = true,
+  linkSymbol = true,
 }: {
   item: DigestItem;
   showExplain?: boolean;
   /** False in Playback — acking a historical reconstruction makes no sense (it's "not cursor-filtered... independent of what any device has actually acknowledged", per the playback API's own docs). */
   showAck?: boolean;
+  /** False on /simulate, whose made-up ticker has no symbol page to open. */
+  linkSymbol?: boolean;
 }) {
   const [mode] = useSimpleDetail();
   const [expanded, setExpanded] = useState(false);
@@ -134,9 +137,13 @@ export function DigestCard({
           >
             {direction && <TrendIcon direction={direction} />}
             <KindDot kind={item.kind} />
-            <Link href={`/symbol/${item.symbol}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
-              {item.symbol}
-            </Link>
+            {linkSymbol ? (
+              <Link href={`/symbol/${item.symbol}`} style={{ color: 'var(--accent-blue)', textDecoration: 'none', fontWeight: 500 }}>
+                {item.symbol}
+              </Link>
+            ) : (
+              <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{item.symbol}</span>
+            )}
             <span>· {formatRange(item.fromTs, item.toTs)}</span>
           </div>
           <p style={{ fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 16, lineHeight: 1.45, margin: 0, color: 'var(--ink)' }}>

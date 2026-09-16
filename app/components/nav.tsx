@@ -14,6 +14,9 @@ const LINKS = [
 
 const PLAYBACK_LINK = { href: '/playback', label: 'Playback' };
 
+// Needs no data and writes nothing, so unlike Playback it isn't behind a flag.
+const SIMULATE_LINK = { href: '/simulate', label: 'Simulate' };
+
 /** A symbol page ("/symbol/TCS") counts as active under Digest — there's no nav item of its own for it. */
 function isActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/' || pathname.startsWith('/symbol/');
@@ -27,7 +30,7 @@ async function handleLogout() {
 
 export function Nav({ showPlayback = false }: { showPlayback?: boolean }) {
   const pathname = usePathname();
-  const links = showPlayback ? [...LINKS, PLAYBACK_LINK] : LINKS;
+  const links = [...LINKS, ...(showPlayback ? [PLAYBACK_LINK] : []), SIMULATE_LINK];
 
   return (
     <header className="app-nav">

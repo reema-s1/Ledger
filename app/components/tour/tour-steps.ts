@@ -24,9 +24,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     page: '/',
     selector: '[data-tour="nav-links"]',
-    title: 'Five screens',
+    title: 'Six screens',
     description:
-      'Digest, Watchlist, Clusters, Playback and System — each one reads straight from the database.',
+      'Digest, Watchlist, Clusters, System and Playback read straight from the database. Simulate runs made-up failures through the same code.',
   },
   {
     page: '/',

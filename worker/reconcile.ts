@@ -5,6 +5,9 @@
  * unconfirmed data), and so it's visible rather than swallowed.
  */
 
+/** 1% — beyond this, two sources count as disagreeing. Shared by ingestion and /simulate. */
+export const RECONCILE_TOLERANCE = 0.01;
+
 export interface SourceQuote {
   price: number;
   ts: Date;

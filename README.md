@@ -132,6 +132,20 @@ Rewind to any past day and see exactly what the digest and clusters looked
 like — rebuilt from the event log, not a recording. Buttons to step a day
 forward or jump straight to the next flagged move.
 
+### Simulate
+Failure drills on a made-up stock, run through the same code the daily
+ingest uses, with nothing saved:
+- **The market sells off:** set the market, sector and stock moves and see
+  what gets flagged.
+- **A feed sends a bad price:** once the two sources differ by more than 1%,
+  the price is labeled and never raises an alert.
+- **A feed goes quiet:** the staleness notice as sessions pass with no new
+  price.
+- **A feed is slow or down:** the worker's real polling loop, in your
+  browser, skipping ticks instead of piling up.
+- **A stock splits:** Ledger vs. what an unadjusted history would flag, and
+  would miss the next day.
+
 ### Also
 - **Symbol page** — a stock's own events, its cluster, and a data status
   (fresh, stale, or unavailable), plus a low-liquidity tag on thin-volume
@@ -169,7 +183,7 @@ moved* is worse than "nothing cleared the bar."
 ## Tech
 
 Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL, no ORM ·
-Vercel · GitHub Actions · Vitest (188 tests, no database needed:
+Vercel · GitHub Actions · Vitest (200 tests, no database needed:
 `npx vitest run`) · driver.js for the tour.
 
 The full technical write-up — schema, the significance math, clustering,
