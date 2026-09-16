@@ -92,8 +92,7 @@ your digest until you mark it seen.
 - When nothing's flagged, **Show me anyway** scores each of your stocks and
   shows how close it came to the bar.
 - **Find possible explanation** searches dated news for a flagged move and
-  summarizes only what those articles say — labeled *unverified*, with the
-  source link.
+  summarizes only what those articles say, with the source link.
 
 ### Ask the log
 ![Ask the log](docs/screenshots/ask-the-log.png)

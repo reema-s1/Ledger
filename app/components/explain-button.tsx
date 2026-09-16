@@ -80,7 +80,7 @@ export function ExplainResultBlock({ state, result }: { state: ExplainState; res
         }}
       >
         <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--ink-faint)', marginBottom: 4 }}>
-          POSSIBLE EXPLANATION (UNVERIFIED)
+          POSSIBLE EXPLANATION
         </div>
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>{result.hypothesis}</p>
         {result.sourceUrl && (
