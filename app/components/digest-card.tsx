@@ -184,7 +184,7 @@ export function DigestCard({
           {expanded && <StructuredExplanationBlock d={item.decomposition} />}
         </>
       )}
-      {canExplain && <ExplainResultBlock state={explain.state} result={explain.result} />}
+      {canExplain && <ExplainResultBlock state={explain.state} result={explain.result} onRetry={explain.run} onDismiss={explain.reset} />}
     </article>
   );
 }

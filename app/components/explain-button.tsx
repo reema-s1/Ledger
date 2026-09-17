@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 
 interface ExplainResult {
   found: boolean;
@@ -38,7 +38,13 @@ export function useExplainLookup(eventId: number) {
     }
   }
 
-  return { state, result, run };
+  /** Back to the pre-lookup state — the card's "Find possible explanation" trigger reappears, and a failed lookup can be retried without a full page reload. */
+  function reset() {
+    setState('idle');
+    setResult(null);
+  }
+
+  return { state, result, run, reset };
 }
 
 export function ExplainTrigger({ state, onClick }: { state: ExplainState; onClick: () => void }) {
@@ -65,7 +71,29 @@ export function ExplainTrigger({ state, onClick }: { state: ExplainState; onClic
   );
 }
 
-export function ExplainResultBlock({ state, result }: { state: ExplainState; result: ExplainResult | null }) {
+const dismissButtonStyle: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  marginLeft: 8,
+  color: 'var(--ink-faint)',
+  fontSize: 11,
+  fontWeight: 600,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+};
+
+export function ExplainResultBlock({
+  state,
+  result,
+  onRetry,
+  onDismiss,
+}: {
+  state: ExplainState;
+  result: ExplainResult | null;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
   if (state !== 'done') return null;
 
   if (result?.found) {
@@ -79,8 +107,13 @@ export function ExplainResultBlock({ state, result }: { state: ExplainState; res
           borderRadius: 'var(--radius-sm)',
         }}
       >
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--ink-faint)', marginBottom: 4 }}>
-          POSSIBLE EXPLANATION
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--ink-faint)', marginBottom: 4 }}>
+            POSSIBLE EXPLANATION
+          </div>
+          <button onClick={onDismiss} aria-label="Dismiss" style={dismissButtonStyle}>
+            Close
+          </button>
         </div>
         <p style={{ fontSize: 13, color: 'var(--ink-muted)', margin: '0 0 6px', lineHeight: 1.5 }}>{result.hypothesis}</p>
         {result.sourceUrl && (
@@ -100,8 +133,16 @@ export function ExplainResultBlock({ state, result }: { state: ExplainState; res
   return (
     <div style={{ marginTop: 8 }}>
       <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
-        {result?.error ? "Couldn't check right now — try again." : 'No related news found.'}
+        {result?.error ? "Couldn't check right now." : 'No related news found.'}
       </span>
+      {result?.error && (
+        <button onClick={onRetry} style={dismissButtonStyle}>
+          Try again
+        </button>
+      )}
+      <button onClick={onDismiss} style={dismissButtonStyle}>
+        Close
+      </button>
     </div>
   );
 }
