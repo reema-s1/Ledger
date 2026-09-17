@@ -32,15 +32,6 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
   const router = useRouter();
   const driverRef = useRef<Driver | null>(null);
   const pendingRef = useRef<'start' | 'next' | 'prev' | null>(null);
-  // Which step index we're actually trying to reach — not the same as
-  // driver.js's own activeIndex, which can flip through intermediate
-  // values (including re-highlighting the *current* step, unchanged, in
-  // response to a scroll/resize event a route change can itself trigger)
-  // before genuinely landing here. onHighlighted fires for every one of
-  // those, so it's the only reliable way to tell "the tour has now
-  // actually reached the step I asked for" from "driver.js redrew
-  // something."
-  const targetIndexRef = useRef<number | null>(null);
   const [steps] = useState(() => TOUR_STEPS.filter((s) => s.optional !== 'playback' || playbackEnabled));
 
   // The popover is driver.js's own DOM node, positioned against whatever
@@ -77,7 +68,6 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
 
   function launch(startIndex: number) {
     driverRef.current?.destroy();
-    targetIndexRef.current = startIndex;
 
     const d = driver({
       allowClose: true,
@@ -96,8 +86,25 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
       onDestroyed: () => {
         driverRef.current = null;
       },
+      // Reveal whenever driver.js has landed on a step for the page we're
+      // actually on now — not "the exact index we asked for". A slow page
+      // (clusters' query is the heaviest in the app, and it just got
+      // slower once Neon's compute was capped for cost reasons) can blow
+      // past waitForElement below, and driver.js's own skipMissingElement
+      // fallback then silently advances PAST the step we requested to
+      // whichever one it finds next, entirely inside its own retry loop —
+      // our onNextClick/goTo is never called for that hop. Gating the
+      // reveal on an exact index match meant that hop left the popover
+      // faded out forever: driver.js had genuinely moved on, our own
+      // bookkeeping just never found out, so nothing ever un-hid it. This
+      // check needs no bookkeeping of its own — it trusts whatever driver.js
+      // actually just highlighted, which self-heals from a skip instead of
+      // needing to predict one.
       onHighlighted: (_element, _step, opts) => {
-        if (opts.index === targetIndexRef.current) setPopoverVisible(true);
+        const idx = opts.index;
+        if (typeof idx === 'number' && steps[idx]?.page === window.location.pathname) {
+          setPopoverVisible(true);
+        }
       },
       // driver.js decides which handler the Next/Done button actually
       // *runs* (not just which label it shows) by checking whether any
@@ -115,10 +122,16 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
         const isLast = i === steps.length - 1;
         return {
           element: s.selector,
-          // 2.5s is generous enough for a client-side route transition plus
-          // a server-rendered page's data fetch to land, without leaving a
-          // real "this element truly isn't here" case waiting too long.
-          waitForElement: 2500,
+          // Generous enough for a client-side route transition plus a
+          // server-rendered page's data fetch to land — clusters' query in
+          // particular (every symbol's divergence, on top of the cluster
+          // groups themselves) is the heaviest page in the app, and can
+          // genuinely take a few seconds on a cold or low-compute database.
+          // A step whose element truly never shows up (a feature-flagged
+          // page that's off) still resolves cleanly via skipMissingElement
+          // below — this is purely about not giving up on a real element
+          // that's just slow to arrive.
+          waitForElement: 6000,
           skipMissingElement: true,
           popover: {
             title: s.title,
@@ -153,7 +166,6 @@ export function ProductTour({ playbackEnabled }: { playbackEnabled: boolean }) {
     // never fires again — the tour just sits there. window.location.pathname
     // has no such staleness; it's read fresh on every call.
     const currentPath = window.location.pathname;
-    targetIndexRef.current = index;
     if (step.page !== currentPath) {
       pendingRef.current = index > (d.getActiveIndex() ?? 0) ? 'next' : 'prev';
       setPopoverVisible(false);
