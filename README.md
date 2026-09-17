@@ -31,8 +31,8 @@ flowchart LR
     You(("You"))
 
     subgraph app["Next.js app · Vercel"]
-        P["Digest · Watchlist · Clusters<br/>Playback · System · Symbol"]
-        A["Ask the log"]
+        P("Digest · Watchlist · Clusters<br/>Playback · System · Symbol")
+        A("Ask the log")
     end
 
     subgraph db["Postgres · Neon"]
@@ -43,29 +43,46 @@ flowchart LR
     end
 
     subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
-        B["Backfill new sessions"]
-        S["Significance engine<br/>market + peer group removed"]
-        R["Grading system<br/>past alerts re-checked"]
-        C["Clustering<br/>recomputed Sundays"]
+        B("Backfill new sessions")
+        S("Significance engine<br/>market + peer group removed")
+        R("Grading system<br/>past alerts re-checked")
+        C("Clustering<br/>recomputed Sundays")
     end
 
-    Y["Yahoo Finance<br/>NSE daily prices"]
+    Y("Yahoo Finance<br/>NSE daily prices")
+    O("Google News + OpenRouter<br/>news explanation")
 
     You <--> P
     You --> A
-    P --> E
-    P --> K
-    P --> G
-    P <--> U
-    A --> E
+    P --> db
+    A --> db
+    db --> ingest
+    ingest --> Y
+    P -.-> O
 
-    B --> K
-    B --> S --> E
-    R --> E
-    C --> G
-    B --> Y
+    B --> S --> R --> C
 
-    O["Google News + OpenRouter<br/>news explanation"] -.-> P
+    classDef you fill:#FFF8E1,stroke:#C9A227,stroke-width:1.5px,color:#3a3a3a
+    classDef appNode fill:#E1EBFF,stroke:#3B5FC4,stroke-width:1.5px,color:#1a1a1a
+    classDef dbNode fill:#F3F1EC,stroke:#8A8272,stroke-width:1.5px,color:#1a1a1a
+    classDef engineNode fill:#E1EBFF,stroke:#3B5FC4,stroke-width:1.5px,color:#1a1a1a
+    classDef gradeNode fill:#FFE9CE,stroke:#C97A2B,stroke-width:1.5px,color:#1a1a1a
+    classDef clusterNode fill:#E1F4E5,stroke:#3E9151,stroke-width:1.5px,color:#1a1a1a
+    classDef plainNode fill:#F3F1EC,stroke:#8A8272,stroke-width:1.5px,color:#1a1a1a
+    classDef extNode fill:#FAFAFA,stroke:#9A9A9A,stroke-width:1.5px,color:#4a4a4a
+
+    class You you
+    class P,A appNode
+    class E,K,U,G dbNode
+    class B plainNode
+    class S engineNode
+    class R gradeNode
+    class C clusterNode
+    class Y,O extNode
+
+    style app fill:#F7F9FF,stroke:#B7C6EE,stroke-width:1.5px
+    style db fill:#FBFAF7,stroke:#D8D2C4,stroke-width:1.5px
+    style ingest fill:#FBFAF7,stroke:#D8D2C4,stroke-width:1.5px
 ```
 
 Every stock is ingested and scored **once**, no matter how many people
