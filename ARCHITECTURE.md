@@ -4,13 +4,11 @@ Most watchlists show current state and leave you to work out what
 changed. Ledger shows the diff.
 
 **1. Read cursor model.** Symbols write into an append-only event log;
-each user holds a per-symbol read offset. "What's new" is
-`log[since_your_offset:]` — computed on read, not fetched as current
-state and diffed in the UI. Reading advances the cursor explicitly, never
-implicitly. Multi-device sync and "since you last checked" aren't UI
-features bolted on afterward; they fall directly out of this data model
-(see Section 6 — two devices racing to ack the same symbol, verified
-against the real running API, not just the unit).
+each user holds a per-symbol read offset. "What's new" is everything
+after that offset — computed on read, not fetched as current state and
+diffed in the UI. Reading advances the cursor explicitly, never
+implicitly, so multi-device sync and "since you last checked" fall
+directly out of the data model rather than being bolted on (Section 6).
 
 **2. Structural break, not price move.** A 12-stock watchlist is usually
 three or four correlated bets, not twelve independent ones (Section 4's
@@ -22,11 +20,71 @@ clears that bar — and that's the product working, not a fallback screen
 (Section 7's empty state is deliberately the most-designed screen in the
 app, not an afterthought).
 
-That's the pitch. Everything below is how it's built, section by section,
-in the order it was built in.
+That's the pitch. Everything below is how it's built.
 
-Stack: Next.js (App Router, TS) + Postgres + a separate long-lived Node
-worker. Plain SQL, no ORM.
+Stack: Next.js (App Router, TS) + Postgres, plain SQL — a separate
+long-lived Node worker handles ingestion (Section 5).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    You(("You"))
+
+    subgraph app["Next.js app · Vercel"]
+        P("Digest · Watchlist · Clusters<br/>Playback · System · Symbol")
+        A("Ask the log")
+    end
+
+    subgraph db["Postgres · Neon"]
+        E[("Event log<br/>append-only")]
+        K[("Candles")]
+        U[("Read bookmarks<br/>per user, per stock")]
+        G[("Clusters")]
+    end
+
+    subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
+        B("Backfill new sessions")
+        S("Significance engine<br/>market + peer group removed")
+        R("Grading system<br/>past alerts re-checked")
+        C("Clustering<br/>recomputed Sundays")
+    end
+
+    Y("Yahoo Finance<br/>NSE daily prices")
+    O("Google News + OpenRouter<br/>news explanation")
+
+    You <--> P
+    You --> A
+    P --> db
+    A --> db
+    db --> ingest
+    ingest --> Y
+    P -.-> O
+
+    B --> S --> R --> C
+
+    classDef you fill:#FFF8E1,stroke:#C9A227,stroke-width:1.5px,color:#3a3a3a
+    classDef appNode fill:#E1EBFF,stroke:#3B5FC4,stroke-width:1.5px,color:#1a1a1a
+    classDef dbNode fill:#F3F1EC,stroke:#8A8272,stroke-width:1.5px,color:#1a1a1a
+    classDef engineNode fill:#E1EBFF,stroke:#3B5FC4,stroke-width:1.5px,color:#1a1a1a
+    classDef gradeNode fill:#FFE9CE,stroke:#C97A2B,stroke-width:1.5px,color:#1a1a1a
+    classDef clusterNode fill:#E1F4E5,stroke:#3E9151,stroke-width:1.5px,color:#1a1a1a
+    classDef plainNode fill:#F3F1EC,stroke:#8A8272,stroke-width:1.5px,color:#1a1a1a
+    classDef extNode fill:#FAFAFA,stroke:#9A9A9A,stroke-width:1.5px,color:#4a4a4a
+
+    class You you
+    class P,A appNode
+    class E,K,U,G dbNode
+    class B plainNode
+    class S engineNode
+    class R gradeNode
+    class C clusterNode
+    class Y,O extNode
+
+    style app fill:#F7F9FF,stroke:#B7C6EE,stroke-width:1.5px
+    style db fill:#FBFAF7,stroke:#D8D2C4,stroke-width:1.5px
+    style ingest fill:#FBFAF7,stroke:#D8D2C4,stroke-width:1.5px
+```
 
 ## Section 1 — Clock and quote abstraction
 
@@ -35,80 +93,35 @@ interfaces (`src/lib/time/clock.ts`, `src/lib/quotes/quote-source.ts`), each
 with a live driver and a replay driver, selected by `DATA_MODE`:
 
 - `DATA_MODE=live` — `LiveClock` (real time, NSE hours) + `LiveQuoteSource`
-  (polls a real provider — Yahoo Finance, see below).
-- `DATA_MODE=replay` (default) — `ReplayClock` + `ReplayQuoteSource` stream
-  a deterministic seeded dataset. The clock only advances as the replay
-  emits ticks, scaled by a speed multiplier — never from wall time.
+  (polls Yahoo Finance, see below).
+- `DATA_MODE=replay` — `ReplayClock` + `ReplayQuoteSource` stream the
+  committed real historical dataset (`data/real-nse-history.json`, 220
+  real NSE sessions) as if it were live. The clock only advances as the
+  replay emits ticks, scaled by a speed multiplier — never from wall time.
 
 Get both for the current mode from `src/lib/data-mode.ts`
 (`createClock()`, `createQuoteSource(clock)`); no other module should reach
 for `Date.now()`, `new Date()`, or `fetch` for market data directly.
 
-### Setup
-
 ```bash
 npm install
-```
-
-### Generate the seed dataset
-
-```bash
-npm run seed
-```
-
-Deterministically generates 20 trading sessions (2026-08-03 to 2026-08-28)
-of OHLCV for 40 NSE-style symbols across 6 sectors (IT, Banking, PSU Bank,
-NBFC, Pharma, Energy) plus a NIFTY index series, and writes it to
-`data/seed-dataset.json` (gitignored — regenerate any time; same seed
-always produces the same bytes). Baked into the data on purpose:
-
-- **Sector correlation** — every symbol's return is `beta * sector_factor +
-  idiosyncratic noise`, every sector factor is `beta * index_return +
-  sector noise`. Real structure for Section 4's clustering to find.
-- **Two structural breaks** — WIPRO (from 2026-08-18) and FEDERALBNK (from
-  2026-08-24) stop depending on their sector factor entirely partway
-  through the run.
-- **One 1:5 split** — BAJFINANCE, ex-date 2026-08-21, expressed as a real
-  overnight ~80% discontinuity in the raw as-traded price (not smoothed
-  away) — the fixture Section 5's corporate-action adjustment has to catch.
-- **One volume spike** — TATAPOWER, 2026-08-12, 8x normal volume with a
-  matching price move.
-
-### Stream a replay
-
-```bash
-npm run replay -- --speed 60
-```
-
-Streams every symbol's ticks to the console, paced by the speed multiplier
-(simulated seconds per real second) — `--speed 1` is real time, `--speed
-300` blows through a session in ~75 seconds. Optional `--symbols
-TCS,INFY,NIFTY` to narrow the feed. Ctrl+C to stop.
-
-If `data/seed-dataset.json` doesn't exist yet, `replay` generates it on
-first run, so `npm run seed` is a documented convenience, not a hard
-prerequisite.
-
-### Type-check
-
-```bash
+npm run replay -- --speed 60   # streams every symbol's ticks to the console
 npx tsc --noEmit
 ```
 
-`LiveQuoteSource`'s primary source is real —
-`src/lib/quotes/yahoo-live-fetcher.ts` implements `LiveQuoteFetcher`
-against Yahoo Finance's public chart endpoint (`meta.regularMarketPrice`/
-`regularMarketTime`), the same source already used for historical seed
-data. `worker/sources.ts` documents where a second independent live
-vendor plugs into the two-source conflict check (Section 5).
+`LiveQuoteSource`'s primary source is Yahoo Finance —
+`src/lib/quotes/yahoo-live-fetcher.ts` requests its public chart endpoint
+directly (`https://query1.finance.yahoo.com/v8/finance/chart/<ticker>.NS`,
+reading `meta.regularMarketPrice`/`regularMarketTime`), no API key needed.
+`worker/sources.ts` documents where a second independent live vendor plugs
+into the two-source conflict check (Section 5).
 
 ## Section 2 — Schema and event log
 
 Postgres schema (`db/migrations/0001_init.sql`): `symbols`, `candles`,
 `corporate_actions`, the append-only `events` log, `users`,
-`watchlist_items`, `read_cursors`, `clusters`. Plain SQL, no ORM — a thin
-typed wrapper (`db/client.ts`) plus one query module per table
-(`db/queries/*.ts`).
+`watchlist_items`, `read_cursors`, `clusters` — a thin typed wrapper
+(`db/client.ts`) plus one query module per table (`db/queries/*.ts`).
 
 Three rules are enforced at the database level, not just by convention:
 
@@ -134,32 +147,16 @@ one bigint offset per `(user_id, symbol)`.
 That means ingestion, the significance engine, and clustering all run
 **once per distinct symbol**, shared by every user watching it, not once
 per user's watchlist. Adding the 10,000th guest account watching RELIANCE
-costs one small `read_cursors` row — it triggers no extra polling, no
-re-run significance check, no clustering recompute. Cost scales with the
-size of the tracked symbol universe (bounded — there are only so many
-NSE-listed stocks), not with `users × watchlist size`. Clusters make this
-concrete: `getClustersAsOf` (`db/queries/clusters.ts`) reads a row
-computed once, weekly, and cached — never recomputed on a request no
-matter how many users or watchlists ask for it.
+costs one small `read_cursors` row — no extra polling, no re-run
+significance check, no clustering recompute. Cost scales with the size of
+the tracked symbol universe, not with `users × watchlist size`.
 
 ### Local Postgres
 
 ```bash
-docker compose up -d db
+docker compose up -d db      # host port 5434
+npm run db:migrate           # applies any .sql file not yet in schema_migrations
 ```
-
-Starts Postgres on **host port 5434** (not 5432 — commonly already taken
-by a native install, as it was on this machine) via `docker-compose.yml`.
-Copy `.env.example` to `.env` (already points `DATABASE_URL` at that
-port) and run:
-
-```bash
-npm run db:migrate
-```
-
-Applies any `.sql` file in `db/migrations/` not yet recorded in
-`schema_migrations`, each inside its own transaction. Safe to re-run —
-already-applied files are skipped.
 
 In production this points at Neon instead (see Deployment); nothing in
 the app code changes, only `DATABASE_URL`.
@@ -168,9 +165,7 @@ the app code changes, only `DATABASE_URL`.
 
 Pure function library, no I/O — `src/significance/`. Numbers in (a
 symbol's own bars, the index's bars, its cluster's daily mean returns),
-a score and a one-sentence explanation out. Nothing here touches the
-database or a clock; Section 5's ingestion worker is what will call
-`evaluate()` with real data and persist whatever it returns.
+a score and a one-sentence explanation out.
 
 The decomposition (`decompose.ts`):
 
@@ -180,284 +175,122 @@ cluster_excess  = cluster_return - beta * index_return
 ```
 
 Substituting shows `residual = observed_return - cluster_return` — beta
-cancels algebraically. That's intentional, not a bug (see the comment at
-the top of `decompose.ts`): what's left over after removing "what the
-market did" and "what the cluster did" is exactly the stock's deviation
-from its own cluster's mean, which is the quantity that gets z-scored
-against its own rolling residual volatility. The beta/index terms aren't
-wasted, though — they still drive the plain-English explanation ("the
-market was flat and IT was up 0.4%").
+cancels algebraically, on purpose (see the comment at the top of
+`decompose.ts`): what's left over after removing "what the market did"
+and "what the cluster did" is exactly the stock's deviation from its own
+cluster's mean, which is what gets z-scored against its own rolling
+residual volatility.
 
-Volume confirms: `volumeWeight = max(0, 1 + ln(volumeRatio))` — ~1 at
-normal volume, grows for high volume, and hard-floors at 0 below roughly
-37% of normal (`ln(x) < -1`), so a move on thin volume is fully
-suppressed rather than merely discounted.
+**Volume confirmation.** The z-score gets multiplied by a volume weight:
+`max(0, 1 + ln(volumeRatio))`. At normal volume (ratio 1) that's ~1, so
+the score is untouched; above-normal volume raises it; below about **37%
+of normal volume** the weight hits **0** and wipes the score out entirely
+— a big move on almost no trading never clears the bar. A symbol with no
+real volume history yet (too newly listed) is treated as neutral (weight
+1, judged on the residual alone) instead of letting a missing baseline
+distort the score.
 
-When a symbol has no real volume baseline at all (an empty or all-zero
-median window — e.g. a symbol too newly listed to have 20 sessions of
-history yet), that's treated as *neutral* (`volumeDataMissing: true`,
-weight = 1, judged on the residual alone) rather than letting a missing
-denominator distort the score, and the explanation discloses the missing
-evidence honestly ("not enough volume history to confirm") instead of
-fabricating a confirmed reading. Covered by a dedicated test
-(`tests/significance/engine.test.ts`).
+**Scoring version.** Every stored event carries `scoringVersion`
+(`config.ts`'s `SCORING_VERSION`) — bumped whenever the scoring *formula*
+changes, so a future formula change can never silently reinterpret an
+old, already-persisted event under new math.
 
-**Scoring version.** Every `SignificanceResult` (and every event payload
-persisted from it) carries `scoringVersion` (`config.ts`'s
-`SCORING_VERSION`, currently `'v1'`) — bumped whenever the scoring
-*formula* changes, so a future formula change can never silently
-reinterpret an old, already-persisted event under new math. Cheap
-insurance for an append-only log that's designed to never rewrite its
-own history.
+**What these numbers are.** A residual z-score is computed against a
+stock's own trailing window (`residualStdevWindow`, default 60 sessions)
+— a relative, self-referential measure ("how unusual is this for *this*
+stock lately"), not a standardized volatility figure comparable across
+symbols.
 
-**What these numbers are, honestly.** A residual z-score is computed
-against a stock's own trailing window (`residualStdevWindow`, default 60
-sessions) — it is a relative, self-referential measure ("how unusual is
-this for *this* stock lately"), not a standardized figure like a 20-day
-or 52-week volatility number, and it isn't meant to be compared across
-symbols as if it were one. That matters because symbols aren't polled at
-the same cadence (Section 5's hot/warm/cold tiers) — the score is a
-prioritization heuristic for one watchlist's worth of attention, not a
-normalized cross-market volatility metric.
-
-Structural break: a rolling correlation-to-cluster window compared
+**Structural break.** A rolling correlation-to-cluster window compared
 against every prior window of the same length in the available history.
 Flagged when the current correlation falls sharply (`breakCorrelationDrop`)
 below its own historical floor **and** the residual z-score clears a
 (lower) bar of its own — a break needs both a broken relationship and an
 actual move, not just noise in a short correlation window. When a day
-qualifies as both a break and a plain residual move, the break wins;
-Section 6's compaction isn't the first place that collapses duplicates.
-
-Thresholds (`config.ts`) are tunable; defaults are aimed at "a normal day
-on a 12-symbol watchlist yields 0-2 events" per the design brief — spot
-checked against Sections 1+2's real seed data (sector-mean-as-cluster
-proxy, since real clustering is Section 4) and it landed at 0-3 events per
-12 symbols across four different sessions, including catching the
-deliberately-seeded WIPRO break window.
-
-### Run the tests
-
-```bash
-npx vitest run
-```
-
-`tests/significance/engine.test.ts` covers the five required fixtures —
-pure beta move (no flag), pure sector move (no flag), isolated residual on
-confirmed volume (flag), the same residual on thin volume (no flag), and a
-correlation breakdown (flag as `structural_break`, not `residual_move`) —
-plus one input-validation case. `tests/significance/fixtures.ts` builds
-controlled synthetic histories (deterministic sinusoidal "noise", not
-random) so each scenario's numbers are reproducible; the exact constants
-were tuned empirically (documented as such — Pearson correlation on small
-windows isn't hand-derivable) against a throwaway exploration script,
-since deleted.
+qualifies as both a break and a plain residual move, the break wins.
 
 ## Section 4 — Clustering, with a mandatory fallback
 
 `src/clustering/`, pure functions, no I/O — return histories in, cluster
-assignments out. Built fallback-first per the brief: `clusterBySector`
-(needs no return history, always succeeds) came before
-`clusterByCorrelation`, and `computeClusters` is the single entry point
-everything else should call — it tries correlation clustering and falls
-back to sector labels whenever that's null.
+assignments out. `clusterBySector` (needs no return history, always
+succeeds) is the fallback; `clusterByCorrelation` is tried first, and
+`computeClusters` is the single entry point everything else calls.
 
 `clusterByCorrelation` returns `null` (triggering the fallback) when:
 
 - **insufficient history** — fewer than `minHistoryDays` (default 90)
-  sessions for any symbol, or
+  sessions for any symbol. (A separate number from Section 3's volume
+  window, which defaults to 20 sessions and only affects how confident a
+  volume reading is — not whether clustering runs at all.)
 - **degenerate output** — every "cluster" is still a singleton, meaning
   nothing found enough structure to merge at all.
 
-Hierarchical merging is bounded by `maxMembers` (2-6 per the brief), and
-also by `maxMergeDistance` (default 0.7, i.e. won't merge below ~0.3
-correlation) — a size cap alone doesn't stop unrelated symbols from
-merging just because there happens to be room, so the distance cutoff is
-a real stopping criterion in its own right, not just a cap on group size.
-Tested with two genuinely independent random series, asserting they stay
-in separate clusters.
-
-Also included: `pairwiseCorrelations(members, returns)`, a pure function
-computing the actual correlation values within a cluster — this is what
-an eventual API route would call for "why are these grouped" in the UI.
-The HTTP endpoint itself isn't built yet since there's no Next.js app to
-hang it on until Section 6/7 — a deliberate ordering choice ("don't skip
-ahead"), not a missed requirement.
-
-### Run it end to end
+Hierarchical merging is bounded by `maxMembers` (2-6) and also by
+`maxMergeDistance` (default 0.7, i.e. won't merge below ~0.3 correlation)
+— a size cap alone doesn't stop unrelated symbols from merging just
+because there happens to be room, so the distance cutoff is a real
+stopping criterion in its own right.
 
 ```bash
-npm run sync-symbols        # upserts the 40 seed symbols into `symbols`
-npm run clusters:recompute  # fetches history via the Section 1 QuoteSource, caches into `clusters`
+npm run sync-symbols        # upserts the active symbols into `symbols`
+npm run clusters:recompute  # fetches history, caches into `clusters`
 ```
 
 Meant to run weekly via a scheduled job in production — this script is
-that job's body, never invoked on a read path. Verified against the real
-pipeline: with only 20 days of seed history (below the 90-day minimum),
-it correctly falls back to sector clustering end to end — real DB, real
-`QuoteSource`, real persistence — which is exactly the fallback
-requirement from the brief ("the system must remain fully functional with
-only the fallback"). Re-running it replaces that date's rows cleanly
-(verified — no duplicate clusters after a second run).
-
-### Run the tests
-
-```bash
-npx vitest run
-```
-
-`tests/clustering/clustering.test.ts` covers: sector fallback needing no
-history; `computeClusters` using the fallback when there's no return data
-at all; insufficient-history returning null; two genuinely independent
-synthetic blocks landing in separate clusters (sizes bounded to
-[2,6]); the size cap holding even under heavy correlation; the
-degenerate/no-structure-found null case; and `computeClusters` correctly
-preferring correlation over sector labels once history is sufficient.
+that job's body, never invoked on a read path.
 
 ## Section 5 — Ingestion worker and resilience
 
 `worker/` — a standalone long-lived Node process (`npm run worker`), not a
 Next.js route. Loop per symbol: pull from `QuoteSource` -> adjust for
 corporate actions before any comparison -> write the candle (idempotent)
--> run the significance engine -> append events above threshold. All six
-required resilience pieces are implemented:
+-> run the significance engine -> append events above threshold.
 
 - **Corporate actions** (`corporate-actions.ts`) — `adjustBarsForCorporateActions`
   rescales both price and volume for every bar before an action's ex-date,
   so a 1:5 split never reads as an overnight -80% move. On the ex-date
   itself, the worker emits a `corporate_action` event and explicitly
-  skips significance evaluation that day — never a false price-move event.
+  skips significance evaluation that day.
 - **Two-source conflict** (`reconcile.ts`) — polls primary and secondary,
-  and marks the day `confirmed: false` (new columns on `candles`, migration
-  `0002`) rather than silently picking one when they disagree beyond
-  tolerance (1%, default). Unconfirmed days are still written (the raw
-  print happened) but significance evaluation is skipped for them.
-- **Freshness** (`freshness.ts`) — pure `checkFreshness(asOf, now, threshold)`;
-  every candle carries `source` + `ts` for the read path to apply it.
+  and marks the day `confirmed: false` rather than silently picking one
+  when they disagree beyond tolerance (1%, default). Unconfirmed days are
+  still written (the raw print happened) but significance evaluation is
+  skipped for them.
+- **Freshness** (`freshness.ts`) — every candle carries its source and
+  timestamp for the read path to classify how current it is.
 - **Stale alerts** (`stale-alerts.ts`) — `checkForResolution` compares a
   prior flagged move's baseline/trigger price against the current price;
   a large-enough reversal emits a follow-up `event_resolved` event
   (`supersedes` the original) instead of leaving the original alert as
   the last word.
 - **Tiered polling** (`polling-tiers.ts`) — `pollingTierFor(watcherCount)`
-  maps watchlist membership (`db/queries/watchlist.ts` `getWatchlistCounts`)
-  to hot/warm/cold intervals.
-- **Backpressure** (`backpressure.ts`) — `IntervalRunner` skips a tick
-  (logging the skip and, once it recovers, the total gap) rather than
-  queuing concurrent runs when a symbol's ingestion is still busy.
+  maps watchlist membership to hot/warm/cold poll intervals, so a symbol
+  nobody's watching isn't polled as often as one everyone is.
+- **Backpressure** (`backpressure.ts`) — `IntervalRunner` is the timer
+  each symbol runs on. If a tick's own ingestion work is still running
+  when the next tick comes due, it skips that tick and logs the gap,
+  rather than starting a second overlapping run — a slow symbol falls
+  behind on its own polling instead of piling up concurrent work.
 
-Two design points worth calling out:
+Two things worth knowing about how ingestion actually runs:
 
-1. **Postgres `date` columns are parsed as plain strings, not JS `Date`
-   objects** (a type parser for OID 1082 in `db/client.ts`, same pattern
-   as the existing numeric/bigint parsers) — every `session_date`/`ex_date`
-   comparison in the codebase (`isExDate`, the backfill day-slicer,
-   cluster lookups) assumes a plain `'YYYY-MM-DD'` string, so this keeps
-   the wire representation and the comparison representation the same
-   type throughout.
-2. **`ingestSymbol` backfills every session date newer than what's
-   already in `candles` for that symbol**, in chronological order, each
-   day using only data available as of that day (no lookahead) — not just
-   "the latest day". That's what lets a worker bootstrap against full
-   history or catch up cleanly after downtime, seeing every corporate
-   action and conflict on the actual day it happened.
+- Postgres `date` columns are parsed as plain `'YYYY-MM-DD'` strings, not
+  JS `Date` objects (`db/client.ts`) — every date comparison in the
+  codebase assumes that shape.
+- A worker call backfills *every* session newer than what's already
+  stored for that symbol, in chronological order — not just "today" — so
+  it can bootstrap a fresh database or catch up after downtime and still
+  see every corporate action and conflict on the day it actually happened.
 
-### Run it end to end
-
-```bash
-npm run sync-corporate-actions   # loads the seeded 1:5 split into `corporate_actions`
-npm run worker
-```
-
-Verified against the real pipeline (fresh `candles`/`events`, then run):
-BAJFINANCE's ex-date (2026-08-21) produces exactly one `corporate_action`
-event and no price-move event that day; ICICIBANK's deliberately-injected
-conflict date (2026-08-19, `worker/sources.ts`) is written with
-`confirmed = false` and produces no significance event; re-running
-`ingestSymbol` for an already-ingested symbol processes zero new days
-(idempotent); and multiple `event_resolved` follow-ups fire correctly
-across the backfill, e.g. *"WIPRO spiked 1.0%, gave back all of it
-since."*
-
-**Re-verified against the shipped real-data path** (not just the
-synthetic BAJFINANCE fixture above): with `data/real-nse-history.json`
-present (the default, committed), `HISTORY_DAYS` widened from 130 to 220
-so a real corporate action further back than a bare 130-session window
-still falls inside it, a fresh backfill correctly produces exactly one
-`corporate_action` event for KOTAKBANK's real 5:1 split (2026-01-14) and
-zero price-move events that day — the same guarantee the BAJFINANCE test
-already covered, now also holding against a real vendor-sourced split,
-not only a planted one. `HISTORY_DAYS` has to be kept >= the fetch
-script's own window (`scripts/fetch-real-history.ts`'s `TARGET_SESSIONS`)
-for this to hold — they're two independent slices of "how far back", and
-widening one without the other silently drops the corporate action back
-out of the ingested window despite it being present in the fetched data.
-
-**Data-mode provenance** (`db/migrations/0005_candle_data_mode.sql`):
-every `candles` row now
-records which `DATA_MODE` produced it. This is provenance, not a
-correctness fix — the significance engine's rolling-window statistics
-are recomputed fresh from `sources.primary.getHistory()` every single
-ingestion cycle (no accumulated internal state), so they were never at
-risk of blending replay and live data across a mode switch. What was
-missing without this column was purely auditability: a way to tell, by
-looking at a stored row, whether it came from the synthetic/replay path
-or a real live fetch, the same way `confirmed`/`source` already record
-two-source reconciliation state.
-
-**Ingestion outcomes, surfaced.** `IngestOutcome` (`'no-history'` |
-`'unconfirmed'` | `'corporate-action'` | `'first-session'` |
-`'no-cluster'` | `'insufficient-cluster-history'` | `'evaluated'`) existed
-as a type from the start but was never persisted — the quiet outcomes
-(no cluster yet, insufficient peer history) produced no log line and no
-event, making "the engine looked and found nothing" indistinguishable
-from "the engine never got to look." Migration `0006` adds a one-row-
-per-symbol `ingest_status` mirror, upserted every cycle
-(`db/queries/ingest-status.ts`), surfaced on `/system`'s new "Ingestion
-outcomes" table — the same "verify it on the spot" spirit as "Show me
-anyway" and "Why grouped?" below.
-
-**Event fingerprinting/escalation-aware suppression — considered,
-correctly not built.** A common pattern in tick-by-tick alerting systems
-(e.g. "60 min / +15 points" style dedup) suppresses repeated identical
-alerts firing many times an hour. That failure mode doesn't exist in this
-architecture: the `(symbol, ts, kind)` unique constraint on `events`
-already caps significance evaluation at once per symbol per session (the
-worker's watermark gate means a symbol already ingested for today
-produces zero further evaluate() calls that day regardless of how often
-it's polled), and a symbol's continuing multi-day move is already
-narrated as one episode, not a fresh alert per day, once it's more than a
-day old (Section 6's compaction). Building a suppression layer on top
-would be solving a problem this daily-bar architecture structurally
-doesn't have — the honest response was verifying that, not adding code
-to match a suggestion written for a different cadence of system.
-
-Graceful shutdown (`process.on('SIGINT'/'SIGTERM', ...)` in
-`worker/index.ts`, closing the pool before exit) follows the standard
-Node.js pattern, matching the deployment target — Railway runs Linux
-containers, where SIGTERM delivery is standard.
-
-### Run the tests
-
-```bash
-npx vitest run
-```
-
-`tests/worker/` covers every pure module: the exact "-80% naive diff"
-split-adjustment case from the brief plus compounding/dividend edge cases;
-two-source agreement/disagreement/tolerance-boundary/no-secondary cases;
-freshness live/stale boundaries; the brief's exact stale-alert example
-("spiked 6%, gave it all back") plus partial-retracement and
-move-got-worse cases; polling tier thresholds and ordering; and
-`IntervalRunner`'s skip/catch-up/error-isolation behavior via direct
-`tick()` calls (no real timers needed).
+Every `candles` row also records which `DATA_MODE` produced it, and every
+symbol's most recent ingestion result — including quiet outcomes that
+produce no event, like "insufficient cluster history" — is mirrored to
+`ingest_status` and shown on `/system`.
 
 ## Section 6 — Read path and cursors
 
-The read path is Next.js App Router API routes now, since this section
-genuinely needs HTTP endpoints — Section 4's clustering endpoint waited
-for this on purpose, Section 7 will build the actual UI on top of what's
-here.
+The read path is Next.js Server Components and API routes, reading
+straight from `db/queries/*`.
 
 **`GET /api/digest?user_id=1`** — every event since the user's cursor,
 per watchlisted symbol, hierarchically compacted, plus each symbol's
@@ -465,444 +298,178 @@ current cursor position. **Never advances a cursor** — reading is
 explicit, via a separate ack.
 
 **`POST /api/cursor/ack`** — body `{ user_id, symbol, up_to_event_id,
-device_id }`. Advances the cursor monotonically only (this is Section 2's
-`ackCursor`, unchanged) — a lower id from a stale/out-of-order device is
-a silent no-op, not an error, verified below.
+device_id }`. Advances the cursor monotonically only — a lower id from a
+stale/out-of-order device is a silent no-op, not an error.
 
-### Hierarchical compaction — the hard part
+### Hierarchical compaction
 
-`src/digest/compact.ts`, a pure function of `(events, now)`, no I/O. Per
-the brief's tiers:
+`src/digest/compact.ts`, a pure function, no I/O:
 
 - **Latest session** — individual events, full detail, newest first.
   Anchored to the newest ingested trading session, not "the last 24
-  hours": daily bars are stamped at the 09:15 IST open and land after the
-  close, so a 24h rule emptied this tier by the next morning and on every
-  weekend — and it's the only tier whose cards carry a decomposition
-  (metrics, breakdown, Hindi). The 7-day cutoffs below are measured from
-  that same session.
-- **Within 7 days** ("episode") — every price-move event for a symbol in this
-  window merges into one narrative: *"TCS drifted down 6.0% over 3
+  hours" — daily bars land after the close, so a wall-clock rule emptied
+  this tier by the next morning. It's the only tier whose cards carry a
+  decomposition (metrics, breakdown, Hindi).
+- **Within 7 days** ("episode") — every price-move event for a symbol in
+  this window merges into one narrative: *"TCS drifted down 6.0% over 3
   sessions."*
 - **> 7 days** ("chapter") — every price-move event for a symbol, no
-  matter how many or how old, collapses into exactly **one** line with
-  the net change: *"TCS: 3 moves flagged, net down 3.2% since
-  2026-07-29."* This is what makes "someone gone 4 months, 40,000 events"
-  safe — tested directly with 4,000 synthetic events spread across ~4
-  months, asserting exactly one output item.
+  matter how many or how old, collapses into exactly one line with the
+  net change: *"TCS: 3 moves flagged, net down 3.2% since 2026-07-29."*
+  This is what makes "someone gone 4 months" safe to show.
 
-Two additional rules, both load-bearing for how Section 5's events read
-naturally together instead of as a raw log:
+Two more rules: a resolved move folds into a single item showing the
+*resolved* text, never a live-looking alert followed by a separate
+resolution line — and a corporate action never merges into a price-move
+narrative, since folding "1:5 split" into a drift percentage would be
+actively misleading.
 
-- **A resolved move folds into one item, not two.** A `residual_move` and
-  its later `event_resolved` (Section 5) collapse into a single digest
-  item showing the *resolved* text — *"WIPRO spiked 6.0%, gave back all
-  of it since"* — never the stale live-looking alert followed by a
-  separate resolution line.
-- **Corporate actions never merge into a price-move narrative.** A split
-  is its own item in whatever tier it falls into, even alongside price
-  moves for the same symbol in the same window — folding "1:5 split" into
-  a drift percentage would be actively misleading.
-
-### Multi-device cursors
-
-Verified against the real API, not just the underlying `ackCursor` unit
-(already covered in Section 2's tests) — the actual scenario the brief
-asks for, two devices racing:
-
-1. Device A acks WIPRO to event 454 → cursor advances to 454, owned by A.
-2. Device B, slow/out of order, acks WIPRO to event 418 (**lower**) →
-   response still shows `454`, still owned by A — silent no-op, not an
-   error, not a rewind.
-3. Device B catches up and acks to 464 (**higher**) → cursor advances to
-   464, now owned by B.
-4. Re-fetching the digest shows WIPRO's cursor at 464 and WIPRO's events
-   gone from the response (nothing new since that cursor) while every
-   other symbol's cursor is untouched — cursors are genuinely independent
-   per (user, symbol).
-
-### Every cursor edge case, checked against the actual schema
+Cursors are genuinely independent per `(user, symbol)` — acking one
+symbol never touches another's cursor, an out-of-order/stale ack is
+ignored rather than rewinding a newer one, and removing then re-adding a
+symbol resumes from wherever its cursor already was rather than dumping
+the full backlog again.
 
 | Case | What happens | Why |
 | --- | --- | --- |
 | An event lands after a client already fetched a digest snapshot | The next fetch includes it — nothing was missed | `GET /api/digest` never advances the cursor; only an explicit ack does |
 | The same device acks the same event twice | Second ack is a silent no-op, cursor unchanged | `ackCursor`'s upsert only updates when the new value is *higher* |
-| An old tab acks after a newer ack already landed (out-of-order) | The old tab's lower value is ignored; the higher cursor stands | The guard is `last_event_id < EXCLUDED.last_event_id`, enforced by Postgres, not client-side sequencing |
-| A symbol is removed from the watchlist, then re-added later | Its cursor row is untouched by removal, so re-adding resumes from where it left off — no full backlog dump | `read_cursors` is keyed by `(user_id, symbol)`, independent of `watchlist_items`; `removeFromWatchlist` only deletes the watchlist row |
+| An old tab acks after a newer ack already landed (out-of-order) | The old tab's lower value is ignored; the higher cursor stands | The guard is `last_event_id < EXCLUDED.last_event_id`, enforced by Postgres |
+| A symbol is removed from the watchlist, then re-added later | Its cursor row is untouched by removal, so re-adding resumes from where it left off | `read_cursors` is keyed by `(user_id, symbol)`, independent of `watchlist_items` |
 | Two different users watch the same symbol | Fully independent — one acking never affects the other | Cursor is per `(user_id, symbol)`, not per symbol |
-
-### Run it end to end
-
-```bash
-npm run dev
-```
-
-```bash
-curl "http://localhost:3000/api/digest?user_id=1"
-curl -X POST http://localhost:3000/api/cursor/ack \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":1,"symbol":"WIPRO","up_to_event_id":454,"device_id":"device-A"}'
-```
-
-Needs a user and a watchlist to return anything — `INSERT INTO users
-(display_name) VALUES ('demo')`, then `INSERT INTO watchlist_items
-(user_id, symbol) VALUES (1, 'TCS')`, then `npm run worker` briefly to
-populate `events`. In the running app, `user_id` is derived server-side
-from the session cookie (Section 7), never passed by the client — these
-routes accept it directly here purely for local testing against a fresh
-database with no session yet.
-
-### Run the tests
-
-```bash
-npx vitest run
-```
-
-`tests/digest/compact.test.ts` covers all three tiers including the exact
-boundary (an event exactly 1 day old is episode, not recent — the
-boundary is exclusive), the resolved-move-folds-into-one-item behavior
-across tier boundaries, corporate actions never merging into a price
-narrative, the empty-input case, and the 4,000-event/4-month collapse.
 
 ## Section 7 — Frontend
 
-Four screens, exactly as scoped ("resist a fifth"): digest (home),
-watchlist management, symbol detail, cluster view. Server Components
-fetch data straight from `db/queries/*` (no internal HTTP round-trip);
-client components exist only where a page actually needs interactivity
-(ack, add/remove watchlist), talking to Section 6's API routes.
+Six screens: digest (home), watchlist, clusters, playback, system, plus
+a per-symbol detail page. Server Components fetch data straight from
+`db/queries/*`; client components exist only where a page actually needs
+interactivity, talking to Section 6's read path.
 
 **Design.** The palette and type system come from the product's own
-metaphor, not a template: `accent #2B3A67` is a deep ink-indigo — "ledger
-blue" — on a warm ledger-paper ground (`#FAF8F3` light / a cool near-black
-in dark), hairline rules instead of card shadows. Type has three
-restrained roles: `Newsreader` (serif) for the plain-sentence headline
-every card leads with, `IBM Plex Sans` for nav/labels, `IBM Plex Mono`
-with tabular figures for prices and percentages — deliberately not
-Inter/Space Grotesk, not cream-and-terracotta, no gradients. Both themes
-are fully specified (`prefers-color-scheme` plus `data-theme` override
-hooks for a future toggle), every token declared once in bare `:root`.
+metaphor: `accent #2B3A67` is a deep ink-indigo — "ledger blue" — on a
+warm ledger-paper ground, hairline rules instead of card shadows.
+`Newsreader` (serif) for the plain-sentence headline every card leads
+with, `IBM Plex Sans` for nav/labels, `IBM Plex Mono` with tabular
+figures for prices and percentages. Both light and dark themes are fully
+specified.
 
-**The empty state gets the most deliberate space in the app**, per the
-brief — centered, generous padding, a single quiet SVG mark, no error or
-loading styling: *"Nothing needs you today. 8 symbols on your watchlist,
-all quiet."*
+**The empty state** gets the most deliberate space in the app —
+centered, generous padding, a single quiet mark, no error or loading
+styling: *"Nothing needs you today."*
 
 **Cluster view** is one hand-built inline SVG, no chart library: each
 cluster's members scatter in a loose ring around a labelled center, and
 any symbol with a recent flagged move drifts further out and picks up a
-semantic color — literally "the breaking node drifting out" from the
-brief, driven by real event data (`getRecentlyMovedSymbols`), not a mock.
+semantic color.
 
-**Symbol detail** includes Section 5's freshness and confirmation states
-exactly as specified — "visible but quiet — a small marker, not a red
-banner": a muted `· stale` / `· unconfirmed` tag next to the as-of date,
-nothing louder.
+**Symbol detail** shows freshness and confirmation states as a small
+muted marker next to the as-of date, never a loud banner.
 
-Auth is cookie-based (`src/lib/current-user.ts`, `app/api/auth/*`):
+**Auth** is cookie-based (`src/lib/current-user.ts`, `app/api/auth/*`):
 guest sign-in, or signup/login with a username and password, hashed
 before storage. `user_id` is read from the session cookie server-side on
-every request — never trusted from the client. A signed-out visitor
-falls back to a fixed demo user (`src/lib/demo-user.ts`) so a direct or
-bookmarked link never breaks.
-
-### Run it end to end
-
-```bash
-npm run seed-demo-user   # creates the demo user + an 8-symbol starter watchlist
-npm run worker           # populate events (Ctrl+C once it's caught up)
-npm run dev
-```
-
-Verified against the real running app, not just typechecked: all four
-routes return 200 with real compiled output (checked the dev server log
-directly — zero compile errors/warnings across every route); the digest
-page correctly renders "Nothing needs you today" against an empty
-`events` table and real compacted cards once the worker has run; the
-cluster page renders exactly 40 symbol nodes + 6 cluster-boundary circles
-via `db/queries` cluster data; the symbol detail page for WIPRO shows its
-real cluster peers as clickable links and its real event history
-(`residual_move` / `event_resolved` pairs) in the correct order; and the
-watchlist API round-trips an add + remove correctly through
-`/api/watchlist`.
-
-### Layout so far
-
-```
-app/
-  globals.css                  design tokens (light+dark), fonts, base styles
-  layout.tsx                    root layout, imports globals.css, renders Nav
-  page.tsx                      Digest (home) — Server Component
-  watchlist/page.tsx             Watchlist management — Server Component
-  symbol/[symbol]/page.tsx        Symbol detail — Server Component
-  clusters/page.tsx                Cluster view — Server Component
-  components/
-    nav.tsx, empty-state.tsx, digest-card.tsx, ack-button.tsx,
-    mark-all-read.tsx, watchlist-controls.tsx, sparkline.tsx, cluster-visual.tsx
-  api/
-    digest/route.ts            GET /api/digest?user_id=
-    cursor/ack/route.ts        POST /api/cursor/ack
-    watchlist/route.ts          GET/POST/DELETE /api/watchlist
-src/lib/
-  demo-user.ts                 DEMO_USER_ID — stands in for real auth
-src/digest/
-  types.ts                    DigestEvent, DigestItem, DigestTier
-  compact.ts                   compactEvents — the hierarchical compaction
-  get-digest.ts                 getDigestForUser — shared by the page and the API route
-tests/digest/
-  compact.test.ts
-scripts/
-  seed-demo-user.ts             `npm run seed-demo-user`
-next.config.mjs
-worker/
-  corporate-actions.ts   adjustBarsForCorporateActions, isExDate
-  reconcile.ts             two-source conflict: reconcileQuotes
-  freshness.ts             checkFreshness
-  polling-tiers.ts         pollingTierFor
-  backpressure.ts          IntervalRunner (skip-if-busy + logged gap)
-  stale-alerts.ts          checkForResolution
-  aggregate.ts             alignBars, computeClusterMeanReturns
-  sources.ts               createSources — primary/secondary QuoteSource per DATA_MODE
-  noisy-quote-source.ts    replay-mode secondary source (jitter + deliberate conflict fixture)
-  ingest.ts                 ingestSymbol — the impure orchestrator, backfills day by day
-  loop.ts                   one IntervalRunner per active symbol, tiered by watchlist count
-  index.ts                  `npm run worker` entry point, graceful shutdown
-tests/worker/
-  corporate-actions.test.ts, reconcile.test.ts, freshness.test.ts,
-  stale-alerts.test.ts, polling-tiers.test.ts, backpressure.test.ts,
-  aggregate.test.ts
-scripts/
-  sync-corporate-actions.ts  `npm run sync-corporate-actions`
-src/significance/
-  types.ts        Bar, SignificanceInput, Decomposition, SignificanceResult
-  stats.ts         mean/stdev/covariance/olsBeta/pearsonCorrelation/median
-  config.ts        SignificanceConfig, DEFAULT_CONFIG
-  decompose.ts      the beta/cluster/residual/volume/correlation math
-  explain.ts        one-sentence plain-English explanation per event kind
-  engine.ts         evaluate(): decompose -> threshold -> explain
-  index.ts          barrel export
-tests/significance/
-  fixtures.ts       deterministic synthetic-history builder
-  engine.test.ts    the five required scenarios + validation
-src/clustering/
-  types.ts               ClusterAssignment, ClusteringResult, SymbolReturns
-  sector-fallback.ts       clusterBySector — the always-available fallback
-  correlation.ts           clusterByCorrelation, pairwiseCorrelations
-  compute-clusters.ts      computeClusters — the entry point (correlation, else fallback)
-  index.ts                 barrel export
-tests/clustering/
-  clustering.test.ts
-scripts/
-  sync-symbols.ts          `npm run sync-symbols`
-  recompute-clusters.ts    `npm run clusters:recompute`
-
-db/
-  client.ts                 pg Pool wrapper: query/queryOne/withTransaction
-  migrations/
-    0001_init.sql
-    0002_quote_confirmation.sql   candles.confirmed, candles.source (Section 5)
-  queries/
-    symbols.ts
-    candles.ts               idempotent per (symbol, session_date)
-    corporate-actions.ts     idempotent per (symbol, ex_date, type)
-    events.ts                append-only, idempotent per (symbol, ts, kind)
-    users.ts
-    watchlist.ts
-    cursors.ts               ackCursor: monotonic advance only
-    clusters.ts
-docker-compose.yml           local Postgres, host port 5434
-.env.example
-src/
-  lib/
-    time/
-      clock.ts             Clock interface
-      market-calendar.ts   shared NSE-hours math
-      live-clock.ts
-      replay-clock.ts
-    quotes/
-      types.ts             Candle, Tick
-      quote-source.ts      QuoteSource interface
-      live-quote-source.ts
-      yahoo-live-fetcher.ts
-      replay-quote-source.ts
-      tick-timeline.ts     daily candles -> deterministic intraday ticks
-    data-mode.ts            DATA_MODE-aware factory (createClock/createQuoteSource)
-  seed/
-    symbols.ts              40 symbols / 6 sectors + NIFTY
-    rng.ts                  seeded PRNG (mulberry32 + gaussian)
-    generate.ts              deterministic dataset generator
-    dataset.ts               load/cache/write the generated dataset
-scripts/
-  seed.ts                   `npm run seed`
-  replay.ts                 `npm run replay -- --speed N [--symbols A,B]`
-  migrate.ts                `npm run db:migrate`
-data/
-  seed-dataset.json          generated, gitignored
-```
+every request. A signed-out visitor falls back to a fixed demo user so a
+direct or bookmarked link never breaks.
 
 ## Inspectability
 
-Two additions past the original seven sections, both making a claim the
-UI already makes into something a viewer can verify on the spot instead
-of taking on faith:
+Two features make a claim the UI already makes into something a viewer
+can verify on the spot instead of taking on faith:
 
-- **"Show me anyway"** on the empty state (`GET /api/why-quiet`,
-  `src/digest/why-quiet.ts`) re-runs the real decomposition for every
-  watchlisted symbol's latest session — live, not cached — and shows the
-  actual residual z-score and volume ratio whether or not either cleared
-  the bar. "12 symbols, all quiet" stops being a claim and becomes a list
-  of eleven numbers that stayed under 2σ (or under the volume-confirmation
-  bar despite clearing 2σ — RELIANCE at 2.1σ on 0.9x volume is exactly
-  that case) sitting next to the two that didn't.
-- **"Why grouped?"** on the symbol detail page (`GET
-  /api/cluster-correlations`, `src/clustering/why-grouped.ts`) is Section
-  4's own ask finally wired to a click: the real pairwise correlation
-  between a symbol and each cluster peer, sorted strongest first. Falls
-  back to an honest note ("grouped by sector — not enough history yet")
-  rather than fabricating correlation numbers when the cluster came from
-  the sector fallback instead of real correlation clustering.
-- **Ingestion outcomes** on `/system` (`db/queries/ingest-status.ts`,
-  migration `0006`) — every symbol's most recent ingestion result,
-  including the outcomes that never produce a log line or an event
-  (`no-cluster`, `insufficient-cluster-history`, `unconfirmed`). Makes
-  "nothing happened" (the engine looked and found nothing significant)
-  visibly distinct from "nothing happened *that we could see*" (the
-  engine never got as far as evaluating).
-
-All three were verified against the live app, not just the API — the
-first two screenshotted mid-interaction (button clicked, panel open,
-real numbers rendered); the ingestion-outcomes table verified by curling
-a running `next dev` server against the real backfilled dataset and
-confirming real, varied outcome labels rendered ("Evaluated", "No history
-yet" for the one ticker Yahoo can't resolve).
+- **"Show me anyway"** on the empty state re-runs the real decomposition
+  for every watchlisted symbol's latest session and shows the actual
+  residual z-score and volume ratio, whether or not either cleared the
+  bar — "12 symbols, all quiet" becomes a list of numbers, not a claim.
+- **"Why grouped?"** on the symbol page shows the real pairwise
+  correlation between a symbol and each cluster peer, sorted strongest
+  first — or an honest note when the cluster came from the sector
+  fallback instead of real correlation clustering.
+- **Ingestion outcomes** on `/system` shows every symbol's most recent
+  ingestion result, including outcomes that never produce an event —
+  distinguishing "nothing happened" from "nothing happened *that we could
+  see*."
 
 ## Deployment
 
-**Vercel** for the Next.js app (read path + frontend), **Neon** for
-Postgres, and a **daily scheduled GitHub Action**
-(`.github/workflows/daily-ingest.yml`) for ingestion. The standalone
-long-lived worker (`npm run worker`) still exists, still works, and still
-has a ready `railway.json` — it's just no longer what runs in production
-day to day.
+**Vercel** for the Next.js app, **Neon** for Postgres, and a **daily
+scheduled GitHub Action** (`.github/workflows/daily-ingest.yml`) for
+ingestion. The standalone long-lived worker (`npm run worker`) still
+exists and still works, with a ready `railway.json` — it's just not what
+runs in production day to day.
 
 **Why ingestion moved off an always-on worker.** The worker polls every
-5s/30s/5min, forever. That has two costs that don't show up until you're
-on free tiers: Railway bills for the process continuously, even though
-there's nothing to ingest outside the ~6h15m NSE session; and — less
-obviously — Neon's free tier only scales compute to zero after ~5 minutes
-with no connections, so a worker holding a connection pool open around
-the clock keeps the database permanently awake. The daily job connects,
-runs `npm run backfill` in `DATA_MODE=live` (real Yahoo sessions newer
-than the `candles` watermark), grades past alerts, recomputes clusters on
-Sundays, and exits. Neon sleeps again; Railway isn't involved; the
-public repo's Actions minutes are free.
+5s/30s/5min, forever — Railway bills for that continuously even though
+there's nothing to ingest outside the ~6h15m NSE session, and a worker
+holding a connection pool open keeps Neon's free-tier compute awake
+around the clock instead of scaling to zero. The daily job connects,
+backfills real Yahoo sessions newer than the `candles` watermark, grades
+past alerts, recomputes clusters on Sundays, and exits.
 
-What that costs, honestly: sub-minute tiered polling isn't running in
-production. The tiered-polling code, its tests, and the `/system` page
-that shows each symbol's tier are all unchanged and run locally. The
-visible difference is small in practice — NSE is closed most hours of
-most days, and the daily job lands each session's real close about 90
-minutes after the bell. For a window that genuinely needs live ticks
-(a live demo during market hours), the worker can be run on demand —
-from a laptop pointed at the same Neon database works, since the Vercel
-app reads whatever lands there — and the Railway service can be
-redeployed from `railway.json` without any other change.
+What that costs: sub-minute tiered polling isn't running in production.
+The tiered-polling code, its tests, and the `/system` page that shows
+each symbol's tier are unchanged and still run locally — the daily job
+just lands each session's real close about 90 minutes after the bell
+instead of ticking through the day. For a window that genuinely needs
+live ticks, the worker can be run on demand from a laptop pointed at the
+same Neon database, or redeployed to Railway from `railway.json`.
 
 Because `ingestSymbol` backfills from the watermark rather than from
 "today", missed runs self-heal on the next one, and re-running the job is
-a no-op (every write is `ON CONFLICT`-idempotent). The backfill script
-isolates failures per symbol (the long-running worker already did, via
-`IntervalRunner`) and only exits non-zero when every symbol fails, so one
-individually unresolvable ticker doesn't turn a whole scheduled run red.
+a no-op. The backfill script isolates failures per symbol and only exits
+non-zero when every symbol fails, so one individually unresolvable ticker
+doesn't turn a whole scheduled run red.
 
-`DATA_MODE=replay` on the deployed demo, deliberately — stated in
-`.env.example` — so the URL always shows a living market regardless of
-real NSE hours. That's a design choice for a demo, not an apology.
+`DATA_MODE=live` in production — real Yahoo data, ingested daily.
+`DATA_MODE=replay` exists for local development and for streaming the
+committed historical dataset without hitting Yahoo.
 
-**The deployment model, named as a constraint, not left implicit.** This
-is one ingestion process at a time (the daily job, or the worker when run
-on demand) plus one durable Postgres (Neon). What that assumes, and what
-would actually break it:
+**What the deployment model assumes.** One ingestion process at a time
+(the daily job, or the worker when run on demand) plus one durable
+Postgres:
 
-- **Durable storage is load-bearing.** Every stateful thing — candles,
-  events, cursors, clusters — lives in Postgres, not in the worker
-  process's memory. An ephemeral filesystem for the *database* itself
-  (not Vercel's read-only one, already handled above) would lose the
-  entire event log on every restart; Neon's persistent volumes are what
-  make the append-only design meaningful in production.
-- **Multiple worker replicas wouldn't corrupt data, but they'd waste
-  vendor calls.** Every write `ingestSymbol` makes is idempotent
-  (`ON CONFLICT` on `(symbol, session_date)` and `(symbol, ts, kind)`
-  unique constraints), so two instances polling the same symbol would
-  just mean Yahoo gets hit twice as often for the same result, not a race
-  that corrupts a candle or double-appends an event. What multiple
-  replicas would *not* do on their own is add capacity: `IntervalRunner`
-  schedules one timer per symbol per process, so two identical replicas
-  poll the identical symbol set — scaling ingestion further needs
-  sharding the symbol list across workers, not just adding copies.
-
-Vercel's serverless functions have a read-only filesystem outside `/tmp`.
-`loadOrGenerateDataset()` (Section 1) writes its cache file wrapped in
-try/catch and treated as optional (`src/seed/dataset.ts`), so a
-filesystem that refuses the write never affects a request; and
-`vercel.json`'s build command runs `npm run seed` before `next build` so
-the bundled dataset is freshly anchored to that deploy's build time (see
-Section 1's dataset-freshness note — the seed calendar anchors to "now"
-at generation time, on purpose, so the digest's recent/episode/chapter
-tiers stay populated instead of every session quietly aging into
-"chapter" as real time passes since the last `npm run seed`).
+- Every stateful thing — candles, events, cursors, clusters — lives in
+  Postgres, not in the worker process's memory.
+- Multiple worker replicas wouldn't corrupt data (every write is
+  idempotent) but wouldn't add capacity either — `IntervalRunner`
+  schedules one timer per symbol per process, so identical replicas just
+  poll the identical symbol set twice. Scaling ingestion needs sharding
+  the symbol list across workers, not more copies of the same one.
 
 ### Steps
 
 **1. Neon** — create a project, copy the pooled connection string
 (`...-pooler.neon.tech`, `?sslmode=require`) into `DATABASE_URL`.
 
-**2. One-time setup, run locally against the Neon URL** (these are data
-bootstrap steps, not part of any platform's build — they only need to run
-once, or again whenever you want to refresh the demo data):
+**2. One-time setup, run locally against the Neon URL:**
 
 ```bash
 DATABASE_URL="<neon-pooled-url>" npm run db:migrate
 DATABASE_URL="<neon-pooled-url>" npm run sync-symbols
 DATABASE_URL="<neon-pooled-url>" npm run sync-corporate-actions
-DATABASE_URL="<neon-pooled-url>" DATA_MODE=replay npm run clusters:recompute
-DATABASE_URL="<neon-pooled-url>" DATA_MODE=replay npm run seed-demo-user
+DATABASE_URL="<neon-pooled-url>" DATA_MODE=live npm run clusters:recompute
 ```
 
 **3. Daily ingestion (GitHub Actions)** — add a repository secret named
-`DATABASE_URL` (Settings → Secrets and variables → Actions) with the Neon
-connection string. The workflow then runs daily at 11:30 UTC (17:00 IST,
-after the close); trigger it once by hand from Actions → Daily ingest →
-Run workflow to confirm it goes green.
+`DATABASE_URL` with the Neon connection string. The workflow runs daily
+at 11:30 UTC (17:00 IST, after the close); trigger it once by hand from
+Actions → Daily ingest → Run workflow to confirm it goes green.
 
-**4. Vercel (app)** — import this repo; it reads `vercel.json` and runs
-`npm run seed && next build` automatically. Set `DATABASE_URL` (the Neon
-**pooled** string) and `DATA_MODE=replay`.
+**4. Vercel (app)** — import this repo; it reads `vercel.json`. Set
+`DATABASE_URL` (the Neon **pooled** string) and `DATA_MODE=live`.
 
 **Optional — Railway (on-demand live worker).** Not needed day to day. If
 a window genuinely needs live polling, a Railway project from this repo
 reads `railway.json` and runs the worker; set `DATABASE_URL` (Neon's
-**direct**, non-pooled string — a long-lived process holding a persistent
-connection doesn't need a pooler) and `DATA_MODE=live`. Remove the
-deployment afterward rather than the service, so it can be redeployed
-with one click and doesn't keep billing or keep Neon awake in between.
+**direct**, non-pooled string) and `DATA_MODE=live`. Remove the
+deployment afterward rather than the service, so it doesn't keep billing
+or keep Neon awake in between.
 
 ### Growth path — what actually changes under real load
 
-Not a roadmap, a map of *which* piece moves first as a specific pressure
-shows up, and why that piece specifically:
-
 | Pressure | What changes | Why that piece |
 | --- | --- | --- |
-| More symbols to poll than one worker can keep up with | Shard the symbol list across multiple worker instances (consistent hashing by symbol) | Every write is already idempotent (see above) — replicas are safe today, they just all poll the same full list; sharding is the only piece missing |
-| Users want push instead of "check the digest" | An SSE/WebSocket layer over the same event log | Cursors already model "what's new since X" — only the transport (poll-on-read vs. push-on-write) changes, not the data model |
-| A second, genuinely independent live vendor becomes available | Wire it into `worker/sources.ts`'s `secondary` | `reconcileQuotes` and the `confirmed` column already exist and are tested against a synthetic disagreement — only the source changes |
-| `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design (Section 2's trigger) already makes partitioning straightforward — nothing rewrites old partitions |
-| Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path (Section 4) and cached; the next step is making the *recompute itself* incremental, not moving it |
-
-### Current state
-
-Live: the Vercel app at ledger-diff.vercel.app, Neon Postgres, and the
-daily ingest workflow (verified with a manual run). The Railway service
-is kept configured for on-demand live polling but isn't required for
-anything the deployed app shows — see above.
+| More symbols to poll than one worker can keep up with | Shard the symbol list across multiple worker instances (consistent hashing by symbol) | Every write is already idempotent — replicas are safe today, they just all poll the same full list; sharding is the only piece missing |
+| Users want push instead of "check the digest" | An SSE/WebSocket layer over the same event log | Cursors already model "what's new since X" — only the transport changes, not the data model |
+| A second, genuinely independent live vendor becomes available | Wire it into `worker/sources.ts`'s `secondary` | `reconcileQuotes` and the `confirmed` column already exist and are tested against a synthetic disagreement |
+| `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design already makes partitioning straightforward |
+| Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path and cached |
