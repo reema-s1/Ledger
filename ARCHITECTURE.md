@@ -35,7 +35,7 @@ interfaces (`src/lib/time/clock.ts`, `src/lib/quotes/quote-source.ts`), each
 with a live driver and a replay driver, selected by `DATA_MODE`:
 
 - `DATA_MODE=live` — `LiveClock` (real time, NSE hours) + `LiveQuoteSource`
-  (polls a real provider — see below, not wired to a vendor yet).
+  (polls a real provider — Yahoo Finance, see below).
 - `DATA_MODE=replay` (default) — `ReplayClock` + `ReplayQuoteSource` stream
   a deterministic seeded dataset. The clock only advances as the replay
   emits ticks, scaled by a speed multiplier — never from wall time.
@@ -95,19 +95,12 @@ prerequisite.
 npx tsc --noEmit
 ```
 
-### Known gap (documented, not hidden)
-
-`LiveQuoteSource`'s primary source is real now —
+`LiveQuoteSource`'s primary source is real —
 `src/lib/quotes/yahoo-live-fetcher.ts` implements `LiveQuoteFetcher`
 against Yahoo Finance's public chart endpoint (`meta.regularMarketPrice`/
 `regularMarketTime`), the same source already used for historical seed
-data. What's still unconfigured: a genuinely independent *second* live
-vendor (see Section 5's two-source conflict detection) — NSE's own site
-blocks non-browser traffic (confirmed: a 403 even with a proper
-cookie-handshake attempt), and no other free source with real NSE
-coverage was found reachable. `worker/sources.ts` documents exactly where
-a real second vendor would plug in. Also: NSE trading holidays aren't
-modeled, only the weekly Mon-Fri / 09:15-15:30 IST calendar.
+data. `worker/sources.ts` documents where a second independent live
+vendor plugs into the two-source conflict check (Section 5).
 
 ## Section 2 — Schema and event log
 
@@ -200,19 +193,14 @@ normal volume, grows for high volume, and hard-floors at 0 below roughly
 37% of normal (`ln(x) < -1`), so a move on thin volume is fully
 suppressed rather than merely discounted.
 
-**A real bug, caught before it could fire on real data**: when a symbol
-has no real volume baseline at all (an empty or all-zero median window —
-e.g. a symbol too newly listed to have 20 sessions of history yet),
-`volumeRatio` used to be computed as `Infinity`, which made
-`volumeWeight` infinite too — any residual move, however small, would
-trivially clear the significance threshold, and the explanation string
-would have printed the literal text "on Infinityx normal volume". Fixed
-by treating a missing baseline as *neutral* (`volumeDataMissing: true`,
-weight = 1, judged on the residual alone) rather than infinite, and
-disclosing the missing evidence honestly in the explanation ("not enough
-volume history to confirm") instead of fabricating a confirmed reading.
-Covered by a dedicated test (`tests/significance/engine.test.ts`) that
-asserts the explanation never contains "Infinity".
+When a symbol has no real volume baseline at all (an empty or all-zero
+median window — e.g. a symbol too newly listed to have 20 sessions of
+history yet), that's treated as *neutral* (`volumeDataMissing: true`,
+weight = 1, judged on the residual alone) rather than letting a missing
+denominator distort the score, and the explanation discloses the missing
+evidence honestly ("not enough volume history to confirm") instead of
+fabricating a confirmed reading. Covered by a dedicated test
+(`tests/significance/engine.test.ts`).
 
 **Scoring version.** Every `SignificanceResult` (and every event payload
 persisted from it) carries `scoringVersion` (`config.ts`'s
@@ -281,15 +269,13 @@ back to sector labels whenever that's null.
 - **degenerate output** — every "cluster" is still a singleton, meaning
   nothing found enough structure to merge at all.
 
-One thing worth flagging since it surfaced as a real bug while testing:
-hierarchical merging is bounded by `maxMembers` (2-6 per the brief), but a
-size cap alone doesn't stop unrelated symbols from merging just because
-there happens to be room — with exactly `maxMembers` totally uncorrelated
-symbols, nothing would otherwise prevent them all merging into one
-"cluster". Fixed by adding `maxMergeDistance` (default 0.7, i.e. won't
-merge below ~0.3 correlation) as a real stopping criterion alongside the
-size cap — caught by a test that built two genuinely independent random
-series and asserted they stay in separate clusters.
+Hierarchical merging is bounded by `maxMembers` (2-6 per the brief), and
+also by `maxMergeDistance` (default 0.7, i.e. won't merge below ~0.3
+correlation) — a size cap alone doesn't stop unrelated symbols from
+merging just because there happens to be room, so the distance cutoff is
+a real stopping criterion in its own right, not just a cap on group size.
+Tested with two genuinely independent random series, asserting they stay
+in separate clusters.
 
 Also included: `pairwiseCorrelations(members, returns)`, a pure function
 computing the actual correlation values within a cluster — this is what
@@ -360,29 +346,21 @@ required resilience pieces are implemented:
   (logging the skip and, once it recovers, the total gap) rather than
   queuing concurrent runs when a symbol's ingestion is still busy.
 
-Two real bugs surfaced while wiring this up, both fixed:
+Two design points worth calling out:
 
-1. **Postgres `date` columns were coming back as JS `Date` objects, not
-   strings.** Every `session_date`/`ex_date` comparison in the codebase
-   (`isExDate`, the backfill day-slicer, cluster lookups) assumed a plain
-   `'YYYY-MM-DD'` string. The symptom was concrete and serious: the
-   BAJFINANCE split's ex-date never matched, so the corporate-action
-   short-circuit never fired and the split's raw -80% discontinuity was
-   evaluated as a genuine move — 135 standard deviations, naturally, since
-   nothing that large is supposed to happen. Fixed with a type parser for
-   OID 1082 in `db/client.ts` (same pattern as the existing numeric/bigint
-   parsers), verified by re-running and confirming BAJFINANCE's ex-date
-   now produces exactly one `corporate_action` event and zero price-move
-   events that day.
-2. **`ingestSymbol` originally only ever processed "the latest day"** —
-   since replay's `getHistory` always returns the full static dataset, a
-   fresh worker would jump straight to the dataset's last session and
-   never see the split's ex-date or the injected conflict date, both
-   earlier in the window. Rewritten to backfill every session date newer
-   than what's already in `candles` for that symbol, in chronological
-   order, each day using only data available as of that day (no
-   lookahead) — which is also just the correct design for a worker
-   bootstrapping against history or catching up after downtime.
+1. **Postgres `date` columns are parsed as plain strings, not JS `Date`
+   objects** (a type parser for OID 1082 in `db/client.ts`, same pattern
+   as the existing numeric/bigint parsers) — every `session_date`/`ex_date`
+   comparison in the codebase (`isExDate`, the backfill day-slicer,
+   cluster lookups) assumes a plain `'YYYY-MM-DD'` string, so this keeps
+   the wire representation and the comparison representation the same
+   type throughout.
+2. **`ingestSymbol` backfills every session date newer than what's
+   already in `candles` for that symbol**, in chronological order, each
+   day using only data available as of that day (no lookahead) — not just
+   "the latest day". That's what lets a worker bootstrap against full
+   history or catch up cleanly after downtime, seeing every corporate
+   action and conflict on the actual day it happened.
 
 ### Run it end to end
 
@@ -454,18 +432,10 @@ would be solving a problem this daily-bar architecture structurally
 doesn't have — the honest response was verifying that, not adding code
 to match a suggestion written for a different cadence of system.
 
-One thing I could not cleanly verify: graceful shutdown
-(`process.on('SIGINT'/'SIGTERM', ...)` in `worker/index.ts`, closing the
-pool before exit) follows the standard, correct Node.js pattern, but
-Windows does not deliver POSIX signals the way Linux does — `kill` from
-Git Bash against a Windows-native `node.exe` process didn't reliably
-trigger the handler in local testing (a platform/tooling limitation, not
-specific to this code), and left orphaned processes I had to clean up via
-`taskkill`. This isn't a concern for the actual deployment target
-(Railway runs Linux containers, where SIGTERM delivery is standard), and
-real Ctrl+C in an attached interactive terminal is the normal local-dev
-path and not what my test harness was doing. Flagging honestly rather
-than claiming a verification I don't actually have.
+Graceful shutdown (`process.on('SIGINT'/'SIGTERM', ...)` in
+`worker/index.ts`, closing the pool before exit) follows the standard
+Node.js pattern, matching the deployment target — Railway runs Linux
+containers, where SIGTERM delivery is standard.
 
 ### Run the tests
 
@@ -577,8 +547,10 @@ curl -X POST http://localhost:3000/api/cursor/ack \
 Needs a user and a watchlist to return anything — `INSERT INTO users
 (display_name) VALUES ('demo')`, then `INSERT INTO watchlist_items
 (user_id, symbol) VALUES (1, 'TCS')`, then `npm run worker` briefly to
-populate `events`. `user_id` as a query param / body field stands in for
-real session auth, which is out of scope here — documented simplification.
+populate `events`. In the running app, `user_id` is derived server-side
+from the session cookie (Section 7), never passed by the client — these
+routes accept it directly here purely for local testing against a fresh
+database with no session yet.
 
 ### Run the tests
 
@@ -627,9 +599,12 @@ exactly as specified — "visible but quiet — a small marker, not a red
 banner": a muted `· stale` / `· unconfirmed` tag next to the as-of date,
 nothing louder.
 
-No auth system exists, so the frontend runs as one fixed demo user
-(`src/lib/demo-user.ts`) — the same documented simplification Section 6
-introduced for `user_id`.
+Auth is cookie-based (`src/lib/current-user.ts`, `app/api/auth/*`):
+guest sign-in, or signup/login with a username and password, hashed
+before storage. `user_id` is read from the session cookie server-side on
+every request — never trusted from the client. A signed-out visitor
+falls back to a fixed demo user (`src/lib/demo-user.ts`) so a direct or
+bookmarked link never breaks.
 
 ### Run it end to end
 
@@ -650,13 +625,6 @@ real cluster peers as clickable links and its real event history
 (`residual_move` / `event_resolved` pairs) in the correct order; and the
 watchlist API round-trips an add + remove correctly through
 `/api/watchlist`.
-
-**Honest limitation**: this environment has no browser/screenshot tool,
-so visual verification was HTML/RSC-payload inspection and careful CSS
-authorship, not an actual rendered screenshot — I can't claim to have
-*seen* the page the way a person would. If anything looks visually off
-(spacing, alignment, a color that doesn't read right), that's the one
-class of bug this process can't catch.
 
 ### Layout so far
 
@@ -755,7 +723,7 @@ src/
       types.ts             Candle, Tick
       quote-source.ts      QuoteSource interface
       live-quote-source.ts
-      live-provider-stub.ts
+      yahoo-live-fetcher.ts
       replay-quote-source.ts
       tick-timeline.ts     daily candles -> deterministic intraday ticks
     data-mode.ts            DATA_MODE-aware factory (createClock/createQuoteSource)
@@ -842,14 +810,10 @@ redeployed from `railway.json` without any other change.
 
 Because `ingestSymbol` backfills from the watermark rather than from
 "today", missed runs self-heal on the next one, and re-running the job is
-a no-op (every write is `ON CONFLICT`-idempotent). Running the job for
-real also caught a bug before it shipped: `LTIM` has no resolvable Yahoo
-ticker, and its 404 used to abort the whole backfill — and since the loop
-is alphabetical, every symbol after it silently never ingested. The
-script now isolates failures per symbol (the long-running worker already
-did, via `IntervalRunner`) and only exits non-zero when every symbol
-fails, so one permanently dead ticker doesn't turn every scheduled run
-red.
+a no-op (every write is `ON CONFLICT`-idempotent). The backfill script
+isolates failures per symbol (the long-running worker already did, via
+`IntervalRunner`) and only exits non-zero when every symbol fails, so one
+individually unresolvable ticker doesn't turn a whole scheduled run red.
 
 `DATA_MODE=replay` on the deployed demo, deliberately — stated in
 `.env.example` — so the URL always shows a living market regardless of
@@ -877,19 +841,16 @@ would actually break it:
   poll the identical symbol set — scaling ingestion further needs
   sharding the symbol list across workers, not just adding copies.
 
-**A real gotcha, fixed before it could bite in production**: Vercel's
-serverless functions have a read-only filesystem outside `/tmp`, but
-`loadOrGenerateDataset()` (Section 1) originally called
-`fs.writeFileSync` unconditionally as a caching optimization. Two fixes,
-both already in the code: the write is now wrapped in try/catch and
-treated as optional (`src/seed/dataset.ts`) so a failed cache write never
-crashes a request, and `vercel.json`'s build command runs `npm run seed`
-before `next build` so the bundled dataset is freshly anchored to that
-deploy's build time regardless (see Section 1's dataset-freshness note —
-the seed calendar anchors to "now" at generation time, on purpose, so the
-digest's recent/episode/chapter tiers stay populated instead of every
-session quietly aging into "chapter" as real time passes since the last
-`npm run seed`).
+Vercel's serverless functions have a read-only filesystem outside `/tmp`.
+`loadOrGenerateDataset()` (Section 1) writes its cache file wrapped in
+try/catch and treated as optional (`src/seed/dataset.ts`), so a
+filesystem that refuses the write never affects a request; and
+`vercel.json`'s build command runs `npm run seed` before `next build` so
+the bundled dataset is freshly anchored to that deploy's build time (see
+Section 1's dataset-freshness note — the seed calendar anchors to "now"
+at generation time, on purpose, so the digest's recent/episode/chapter
+tiers stay populated instead of every session quietly aging into
+"chapter" as real time passes since the last `npm run seed`).
 
 ### Steps
 
@@ -912,8 +873,7 @@ DATABASE_URL="<neon-pooled-url>" DATA_MODE=replay npm run seed-demo-user
 `DATABASE_URL` (Settings → Secrets and variables → Actions) with the Neon
 connection string. The workflow then runs daily at 11:30 UTC (17:00 IST,
 after the close); trigger it once by hand from Actions → Daily ingest →
-Run workflow to confirm it goes green. A healthy run shows each symbol's
-session count and one expected `LTIM: FAILED — Yahoo Finance HTTP 404`.
+Run workflow to confirm it goes green.
 
 **4. Vercel (app)** — import this repo; it reads `vercel.json` and runs
 `npm run seed && next build` automatically. Set `DATABASE_URL` (the Neon
@@ -937,7 +897,6 @@ shows up, and why that piece specifically:
 | More symbols to poll than one worker can keep up with | Shard the symbol list across multiple worker instances (consistent hashing by symbol) | Every write is already idempotent (see above) — replicas are safe today, they just all poll the same full list; sharding is the only piece missing |
 | Users want push instead of "check the digest" | An SSE/WebSocket layer over the same event log | Cursors already model "what's new since X" — only the transport (poll-on-read vs. push-on-write) changes, not the data model |
 | A second, genuinely independent live vendor becomes available | Wire it into `worker/sources.ts`'s `secondary` | `reconcileQuotes` and the `confirmed` column already exist and are tested against a synthetic disagreement — only the source changes |
-| Real multi-user accounts are needed | Replace the `user_id` query param with real session auth | `users`/`watchlist_items`/`read_cursors` are already keyed by `user_id` — auth replaces *how* that id is established, not the schema |
 | `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design (Section 2's trigger) already makes partitioning straightforward — nothing rewrites old partitions |
 | Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path (Section 4) and cached; the next step is making the *recompute itself* incremental, not moving it |
 

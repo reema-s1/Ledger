@@ -28,13 +28,11 @@ the bar, and that's the product working.
 
 ```mermaid
 flowchart LR
-    Y["Yahoo Finance<br/>NSE daily prices"]
+    You(("You"))
 
-    subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
-        B["Backfill new sessions"]
-        S["Significance engine<br/>market + peer group removed"]
-        R["Grade past alerts"]
-        C["Recompute clusters<br/>Sundays"]
+    subgraph app["Next.js app · Vercel"]
+        P["Digest · Watchlist · Clusters<br/>Playback · System · Symbol"]
+        A["Ask the log"]
     end
 
     subgraph db["Postgres · Neon"]
@@ -44,22 +42,28 @@ flowchart LR
         G[("Clusters")]
     end
 
-    subgraph app["Next.js app · Vercel"]
-        P["Digest · Watchlist · Clusters<br/>Playback · System · Symbol"]
-        A["Ask the log"]
+    subgraph ingest["Daily ingest · GitHub Actions, 17:00 IST"]
+        B["Backfill new sessions"]
+        S["Significance engine<br/>market + peer group removed"]
+        R["Grading system<br/>past alerts re-checked"]
+        C["Clustering<br/>recomputed Sundays"]
     end
 
-    Y --> B --> K
+    Y["Yahoo Finance<br/>NSE daily prices"]
+
+    You <--> P
+    You --> A
+    P --> E
+    P --> K
+    P --> G
+    P <--> U
+    A --> E
+
+    B --> K
     B --> S --> E
     R --> E
     C --> G
-    E --> P
-    K --> P
-    G --> P
-    U <--> P
-    E --> A
-    P --> Browser(("You"))
-    A --> Browser
+    B --> Y
 
     O["Google News + OpenRouter<br/>news explanation"] -.-> P
 ```
