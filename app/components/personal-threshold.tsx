@@ -95,7 +95,11 @@ export function PersonalThreshold({ symbol, thresholdPct, exceeded }: { symbol: 
     <button
       onClick={() => setEditing(true)}
       className="tabular"
-      title={thresholdPct !== null ? `Personal reminder — set to notify at ±${thresholdPct}%, separate from the significance engine` : 'Set a personal move-size reminder, separate from significance'}
+      title={
+        thresholdPct !== null
+          ? `Personal reminder — set to notify at ±${thresholdPct}% since you last checked this symbol, separate from the significance engine`
+          : 'Set a personal move-size reminder, separate from significance'
+      }
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -111,7 +115,7 @@ export function PersonalThreshold({ symbol, thresholdPct, exceeded }: { symbol: 
         fontWeight: exceeded ? 700 : 500,
       }}
     >
-      🔔 {thresholdPct !== null ? `±${thresholdPct}%${exceeded ? ' — hit today' : ''}` : 'set reminder'}
+      🔔 {thresholdPct !== null ? `±${thresholdPct}%${exceeded ? ' — hit' : ''}` : 'set reminder'}
     </button>
   );
 }

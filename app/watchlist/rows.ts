@@ -38,7 +38,7 @@ export interface WatchlistRow {
   quality: QuoteQuality | null;
   /** A manual, personal reminder (item 19) — never fed into or read from the significance engine. Null if the user hasn't set one for this symbol. */
   personalThresholdPct: number | null;
-  /** Whether today's raw |1D change| exceeds the personal threshold — a separate fact from `daySignificant`, never conflated with it. */
+  /** Whether |sinceCursorPct| exceeds the personal threshold — the move since the user last checked, not just today's — a separate fact from `daySignificant`, never conflated with it. */
   thresholdExceeded: boolean;
 }
 
@@ -69,7 +69,10 @@ export async function buildWatchlistRows(
         ? recentEvents.some((e) => MOVE_KINDS.has(e.kind) && e.ts.toISOString().slice(0, 10) === latest.session_date)
         : false;
 
-      // cursor === 0 means "never acknowledged anything for this symbol" —
+      // "Show me the since-you-left logic" — this block: the chart's
+      // dotted line and the "+5% since you left" figure both come from
+      // finding the candle at the user's own read cursor and comparing it
+      // to the latest close. cursor === 0 means "never acknowledged anything for this symbol" —
       // true for every symbol on a fresh watchlist add, and (until a real
       // user starts marking things seen) for this whole demo right now.
       // That's still a real "since you left" story to tell, not nothing:
@@ -97,8 +100,19 @@ export async function buildWatchlistRows(
 
       const dayChangePct = latest && prior ? ((latest.c - prior.c) / prior.c) * 100 : null;
       const personalThresholdPct = thresholds.get(s.symbol) ?? null;
+      // "Show me the personal reminder logic" — this check: one magnitude,
+      // no direction, compared with Math.abs — "notify if this moves more
+      // than X%" always means either way, never just up or just down.
+      // Entirely separate from the significance engine above; never fed
+      // into it and never fed by it.
+      //
+      // Checked against sinceCursorPct (the same "+5% since you left"
+      // figure shown right next to the pill) rather than dayChangePct — a
+      // reminder set to catch a slow multi-day slide has to look at the
+      // move since you last checked, not just today's own day, or it can
+      // sit unlit right beside a number that's already well past it.
       const thresholdExceeded =
-        personalThresholdPct !== null && dayChangePct !== null && Math.abs(dayChangePct) >= personalThresholdPct;
+        personalThresholdPct !== null && sinceCursorPct !== null && Math.abs(sinceCursorPct) >= personalThresholdPct;
 
       return {
         symbol: s.symbol,

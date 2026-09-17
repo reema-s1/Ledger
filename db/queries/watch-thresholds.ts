@@ -1,5 +1,8 @@
 import { query } from '../client';
-import { getRecentCandles } from './candles';
+import { getRecentCandles, getCandle } from './candles';
+import { getCursorOrDefault } from './cursors';
+import { getEvent } from './events';
+import { istDateString } from '../../src/lib/time/market-calendar';
 
 export interface WatchThresholdRow {
   user_id: number;
@@ -37,14 +40,26 @@ export interface TriggeredThreshold {
   changePct: number;
 }
 
+// Matches app/watchlist/rows.ts's own CANDLE_WINDOW_DAYS exactly — a
+// cursor of 0 (never acknowledged anything) falls back to "the oldest
+// candle in this same window" as the baseline in both places, so a fresh
+// guest's first-ever reminder agrees with what the row right next to it
+// already says, rather than the bell silently treating "never checked" as
+// "nothing to compare" while the row happily shows a real percentage.
+const CANDLE_WINDOW_DAYS = 130;
+
 /**
- * Which of a user's personal thresholds today's real 1D move actually
- * exceeds — for the nav bell (app/components/nav.tsx), so a triggered
- * reminder is visible from every page, not only /watchlist. Deliberately
- * cheap (2 candles per symbol, not the full sparkline/range/event history
- * app/watchlist/rows.ts fetches) since this runs on every page load via
- * the root layout, for however many thresholds a user happens to have —
- * usually a handful, never the whole watchlist.
+ * Which of a user's personal thresholds are exceeded by the move *since
+ * they last checked that symbol* — the same figure the watchlist row's
+ * own "+5% since you left" already shows (app/watchlist/rows.ts's
+ * sinceCursorPct) — for the nav bell (app/components/nav.tsx), so a
+ * triggered reminder is visible from every page, not only /watchlist.
+ *
+ * Was today's raw 1D move instead, which silently disagreed with the
+ * number the watchlist row puts right next to the same reminder pill: a
+ * slow multi-day slide past the threshold showed "since you left" in red
+ * but never rang the bell, because no single day's move alone had cleared
+ * it.
  */
 export async function getTriggeredThresholds(userId: number): Promise<TriggeredThreshold[]> {
   const thresholds = await listWatchThresholds(userId);
@@ -52,10 +67,25 @@ export async function getTriggeredThresholds(userId: number): Promise<TriggeredT
 
   const results = await Promise.all(
     [...thresholds.entries()].map(async ([symbol, thresholdPct]): Promise<TriggeredThreshold | null> => {
-      const candles = await getRecentCandles(symbol, 2);
-      if (candles.length < 2) return null;
-      const [prior, latest] = candles;
-      const changePct = ((latest!.c - prior!.c) / prior!.c) * 100;
+      const cursor = await getCursorOrDefault(userId, symbol);
+
+      let baseline: { c: number } | null;
+      let latest: { c: number } | null;
+
+      if (cursor === 0) {
+        const candles = await getRecentCandles(symbol, CANDLE_WINDOW_DAYS);
+        if (candles.length === 0) return null;
+        baseline = candles[0]!;
+        latest = candles[candles.length - 1]!;
+      } else {
+        const [cursorEvent, latestCandles] = await Promise.all([getEvent(cursor), getRecentCandles(symbol, 1)]);
+        latest = latestCandles[0] ?? null;
+        if (!cursorEvent || !latest) return null;
+        baseline = await getCandle(symbol, istDateString(cursorEvent.ts));
+        if (!baseline) return null;
+      }
+
+      const changePct = ((latest.c - baseline.c) / baseline.c) * 100;
       return Math.abs(changePct) >= thresholdPct ? { symbol, thresholdPct, changePct } : null;
     }),
   );
