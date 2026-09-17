@@ -16,9 +16,7 @@ clustering). A move fully explained by the market or the sector isn't
 news — the unexplained residual is (Section 3). And the sharpest version
 of that isn't "moved 5%," it's "this stock tracked its cluster for months
 and just stopped." Most days, on a properly-clustered watchlist, nothing
-clears that bar — and that's the product working, not a fallback screen
-(Section 7's empty state is deliberately the most-designed screen in the
-app, not an afterthought).
+clears that bar — and that's the product working, not a fallback screen.
 
 That's the pitch. Everything below is how it's built.
 
@@ -256,13 +254,24 @@ corporate actions before any comparison -> write the candle (idempotent)
   when they disagree beyond tolerance (1%, default). Unconfirmed days are
   still written (the raw print happened) but significance evaluation is
   skipped for them.
-- **Freshness** (`freshness.ts`) — every candle carries its source and
-  timestamp for the read path to classify how current it is.
-- **Stale alerts** (`stale-alerts.ts`) — `checkForResolution` compares a
-  prior flagged move's baseline/trigger price against the current price;
-  a large-enough reversal emits a follow-up `event_resolved` event
-  (`supersedes` the original) instead of leaving the original alert as
-  the last word.
+- **Freshness** (`freshness.ts`) — staleness is judged in trading
+  sessions, not wall-clock time: a candle is live through the next
+  session's close (a newer bar genuinely can't exist yet), stale after
+  one missed session, unreachable after several — so a Friday close
+  isn't "3 days stale" by Monday morning.
+- **Stale alerts** (`stale-alerts.ts`) — runs inline during ingestion:
+  `checkForResolution` compares a prior flagged move's baseline/trigger
+  price against the next day's price; a full reversal emits a follow-up
+  `event_resolved` event (`supersedes` the original) instead of leaving
+  the original alert as the last word.
+- **Grading** (`src/resolution/grade.ts`, `worker/resolution-job.ts`) —
+  separate from the above: a periodic job (part of the daily run) that
+  re-checks every flagged move once it's at least ~5 sessions old and
+  grades it **held** / **partially reverted** / **reverted**, based on
+  how much of the original move survives to today's price. Grades an
+  event once, never again — a retrospective scorecard, not a second
+  significance check. This is the "10 held, 10 reverted" line on the
+  digest.
 - **Tiered polling** (`polling-tiers.ts`) — `pollingTierFor(watcherCount)`
   maps watchlist membership to hot/warm/cold poll intervals, so a symbol
   nobody's watching isn't polled as often as one everyone is.
@@ -301,6 +310,12 @@ explicit, via a separate ack.
 device_id }`. Advances the cursor monotonically only — a lower id from a
 stale/out-of-order device is a silent no-op, not an error.
 
+**Auth** is cookie-based (`src/lib/current-user.ts`, `app/api/auth/*`):
+guest sign-in, or signup/login with a username and password, hashed
+before storage. `user_id` is read from the session cookie server-side on
+every request, never trusted from the client. A signed-out visitor falls
+back to a fixed demo user so a direct or bookmarked link never breaks.
+
 ### Hierarchical compaction
 
 `src/digest/compact.ts`, a pure function, no I/O:
@@ -338,56 +353,47 @@ the full backlog again.
 | A symbol is removed from the watchlist, then re-added later | Its cursor row is untouched by removal, so re-adding resumes from where it left off | `read_cursors` is keyed by `(user_id, symbol)`, independent of `watchlist_items` |
 | Two different users watch the same symbol | Fully independent — one acking never affects the other | Cursor is per `(user_id, symbol)`, not per symbol |
 
-## Section 7 — Frontend
+**Ask the log** (`src/lib/ask-log.ts`) — a plain-text question ("why is
+my portfolio red today?") is parsed by regex into a symbol, a time
+window, and an intent; the answer is built entirely from stored events,
+with links back to them. An optional LLM layer (behind a flag, off in
+production) only parses ambiguous wording and rephrases the answer for
+readability — it never decides what's significant, and a rephrased
+answer is checked to contain only numbers and tickers that were already
+in the original before it's shown.
 
-Six screens: digest (home), watchlist, clusters, playback, system, plus
-a per-symbol detail page. Server Components fetch data straight from
-`db/queries/*`; client components exist only where a page actually needs
-interactivity, talking to Section 6's read path.
+**Hindi.** The breakdown under a card can render in Hindi via a fixed
+phrase table (`src/digest/structured-explanation.ts`), not a translation
+model — every number (percentages, σ, ratios) is computed once in
+English and reused as-is; only the words around it are looked up.
 
-**Design.** The palette and type system come from the product's own
-metaphor: `accent #2B3A67` is a deep ink-indigo — "ledger blue" — on a
-warm ledger-paper ground, hairline rules instead of card shadows.
-`Newsreader` (serif) for the plain-sentence headline every card leads
-with, `IBM Plex Sans` for nav/labels, `IBM Plex Mono` with tabular
-figures for prices and percentages. Both light and dark themes are fully
-specified.
+**Personal reminders** (`db/queries/watch-thresholds.ts`) — a manual
+"notify me if this moves more than X%" per symbol, entirely separate
+from the significance engine: never read by it, never written by it.
+Checked against the same move-since-you-last-checked figure the
+watchlist row already shows, not just today's move.
 
-**The empty state** gets the most deliberate space in the app —
-centered, generous padding, a single quiet mark, no error or loading
-styling: *"Nothing needs you today."*
-
-**Cluster view** is one hand-built inline SVG, no chart library: each
-cluster's members scatter in a loose ring around a labelled center, and
-any symbol with a recent flagged move drifts further out and picks up a
-semantic color.
-
-**Symbol detail** shows freshness and confirmation states as a small
-muted marker next to the as-of date, never a loud banner.
-
-**Auth** is cookie-based (`src/lib/current-user.ts`, `app/api/auth/*`):
-guest sign-in, or signup/login with a username and password, hashed
-before storage. `user_id` is read from the session cookie server-side on
-every request. A signed-out visitor falls back to a fixed demo user so a
-direct or bookmarked link never breaks.
+**Playback** (`GET /api/playback?date=`) — rebuilds the digest and
+cluster view exactly as they'd have looked on any past day, from the
+same event log and the same compaction function above — not a recording.
 
 ## Inspectability
 
-Two features make a claim the UI already makes into something a viewer
-can verify on the spot instead of taking on faith:
+Every claim the UI makes is something a viewer can check on the spot,
+not just take on faith:
 
-- **"Show me anyway"** on the empty state re-runs the real decomposition
-  for every watchlisted symbol's latest session and shows the actual
-  residual z-score and volume ratio, whether or not either cleared the
-  bar — "12 symbols, all quiet" becomes a list of numbers, not a claim.
-- **"Why grouped?"** on the symbol page shows the real pairwise
-  correlation between a symbol and each cluster peer, sorted strongest
-  first — or an honest note when the cluster came from the sector
-  fallback instead of real correlation clustering.
-- **Ingestion outcomes** on `/system` shows every symbol's most recent
-  ingestion result, including outcomes that never produce an event —
-  distinguishing "nothing happened" from "nothing happened *that we could
-  see*."
+- **Show me anyway** — on an empty digest, re-scores every watchlisted
+  symbol's latest session live and shows the real z-score and volume
+  ratio, whether or not it cleared the bar.
+- **Why grouped?** — on a symbol page, the real pairwise correlation
+  between that symbol and each cluster peer, strongest first.
+- **Ingestion outcomes** (`/system`) — every symbol's last ingestion
+  result, including the quiet ones that produce no event.
+- **Simulate** (`/simulate`) — five failure drills (a market selloff, a
+  bad price from one feed, a stale feed, a slow/down feed, a stock split)
+  run through the real scoring and reconciliation code on made-up input.
+  A claim like "a split never reads as a crash" becomes something you can
+  trigger and watch, not just trust.
 
 ## Deployment
 
@@ -402,8 +408,9 @@ runs in production day to day.
 there's nothing to ingest outside the ~6h15m NSE session, and a worker
 holding a connection pool open keeps Neon's free-tier compute awake
 around the clock instead of scaling to zero. The daily job connects,
-backfills real Yahoo sessions newer than the `candles` watermark, grades
-past alerts, recomputes clusters on Sundays, and exits.
+backfills real Yahoo sessions newer than the `candles` watermark (the
+latest session date already stored for that symbol), grades past alerts,
+recomputes clusters on Sundays, and exits.
 
 What that costs: sub-minute tiered polling isn't running in production.
 The tiered-polling code, its tests, and the `/system` page that shows
@@ -423,17 +430,12 @@ doesn't turn a whole scheduled run red.
 `DATA_MODE=replay` exists for local development and for streaming the
 committed historical dataset without hitting Yahoo.
 
-**What the deployment model assumes.** One ingestion process at a time
-(the daily job, or the worker when run on demand) plus one durable
-Postgres:
-
-- Every stateful thing — candles, events, cursors, clusters — lives in
-  Postgres, not in the worker process's memory.
-- Multiple worker replicas wouldn't corrupt data (every write is
-  idempotent) but wouldn't add capacity either — `IntervalRunner`
-  schedules one timer per symbol per process, so identical replicas just
-  poll the identical symbol set twice. Scaling ingestion needs sharding
-  the symbol list across workers, not more copies of the same one.
+One ingestion process at a time (the daily job, or the worker when run on
+demand), one durable Postgres. Every write is idempotent, so running two
+ingestion processes at once wouldn't corrupt anything — it just wouldn't
+add capacity, since each one would poll the same full symbol list.
+Scaling ingestion means sharding the symbol list across workers, not
+adding copies of the same one.
 
 ### Steps
 
@@ -469,7 +471,6 @@ or keep Neon awake in between.
 | Pressure | What changes | Why that piece |
 | --- | --- | --- |
 | More symbols to poll than one worker can keep up with | Shard the symbol list across multiple worker instances (consistent hashing by symbol) | Every write is already idempotent — replicas are safe today, they just all poll the same full list; sharding is the only piece missing |
-| Users want push instead of "check the digest" | An SSE/WebSocket layer over the same event log | Cursors already model "what's new since X" — only the transport changes, not the data model |
 | A second, genuinely independent live vendor becomes available | Wire it into `worker/sources.ts`'s `secondary` | `reconcileQuotes` and the `confirmed` column already exist and are tested against a synthetic disagreement |
 | `events` grows large enough that reads slow down | Partition by `symbol` or by time range | The append-only, no-update design already makes partitioning straightforward |
 | Correlation clustering's O(n²) weekly recompute stops being cheap | Cache/update the correlation matrix incrementally instead of recomputing from scratch | It's already off the request path and cached |

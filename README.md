@@ -154,6 +154,8 @@ like — rebuilt from the event log, not a recording. Buttons to step a day
 forward or jump straight to the next flagged move.
 
 ### Simulate
+![Simulate](docs/screenshots/simulate.png)
+
 Failure drills on a made-up stock, run through the same code the daily
 ingest uses, with nothing saved:
 - **The market sells off:** set the market, sector and stock moves and see
@@ -203,7 +205,7 @@ moved* is worse than "nothing cleared the bar."
 
 ## Tech
 
-Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL, no ORM ·
+Next.js (App Router, TypeScript) · Postgres on Neon, plain SQL ·
 Vercel · GitHub Actions · Vitest (200 tests, no database needed:
 `npx vitest run`) · driver.js for the tour.
 
