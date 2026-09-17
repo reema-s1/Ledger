@@ -20,28 +20,37 @@ export function PersonalThreshold({ symbol, thresholdPct, exceeded }: { symbol: 
 
   async function save() {
     const pct = Number(value);
-    if (!Number.isFinite(pct) || pct <= 0) return;
+    if (!Number.isFinite(pct) || pct <= 0 || saving) return;
     setSaving(true);
-    await fetch('/api/watch-threshold', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: getClientUserId(), symbol, threshold_pct: pct }),
-    });
-    setSaving(false);
-    setEditing(false);
-    router.refresh();
+    try {
+      await fetch('/api/watch-threshold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: getClientUserId(), symbol, threshold_pct: pct }),
+      });
+      setEditing(false);
+      router.refresh();
+    } finally {
+      // Always cleared, even on a network failure — otherwise a dropped
+      // request leaves the button disabled forever with no way back in,
+      // which reads as "clicking does nothing."
+      setSaving(false);
+    }
   }
 
   async function clear() {
     setSaving(true);
-    await fetch('/api/watch-threshold', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: getClientUserId(), symbol }),
-    });
-    setSaving(false);
-    setEditing(false);
-    router.refresh();
+    try {
+      await fetch('/api/watch-threshold', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: getClientUserId(), symbol }),
+      });
+      setEditing(false);
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (editing) {
@@ -53,12 +62,22 @@ export function PersonalThreshold({ symbol, thresholdPct, exceeded }: { symbol: 
           step="0.1"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          // Enter submits, matching the watchlist's own add-symbol field —
+          // without this, a click on the small "set" text was the only
+          // way in, and a press of Enter (the instinctive move after
+          // typing a number) silently did nothing.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setEditing(false);
+          }}
           placeholder="%"
+          disabled={saving}
+          autoFocus
           className="tabular no-spinner"
           style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center', border: '1px solid var(--rule)', borderRadius: 5, background: 'var(--bg)', color: 'var(--ink)' }}
         />
-        <button onClick={save} disabled={saving} style={{ background: 'none', border: 'none', padding: 0, fontSize: 11, color: 'var(--accent-blue)', cursor: 'pointer', fontWeight: 600 }}>
-          set
+        <button onClick={save} disabled={saving} style={{ background: 'none', border: 'none', padding: 0, fontSize: 11, color: 'var(--accent-blue)', cursor: 'pointer', fontWeight: 600, minWidth: 26 }}>
+          {saving ? 'saving…' : 'set'}
         </button>
         {thresholdPct !== null && (
           <button onClick={clear} disabled={saving} style={{ background: 'none', border: 'none', padding: 0, fontSize: 11, color: 'var(--ink-faint)', cursor: 'pointer' }}>
